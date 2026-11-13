@@ -5,17 +5,13 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
-
-  // Navegação principal ('shifts' | 'applications' | 'profile')
   const [activeTab, setActiveTab] = useState('shifts')
 
-  // Controle de Tela de Login vs Cadastro em Etapas
-  const [authMode, setAuthMode] = useState('login') // 'login' | 'signup'
-  const [signupStep, setSignupStep] = useState(1) // 1 | 2 | 3
+  const [authMode, setAuthMode] = useState('login')
+  const [signupStep, setSignupStep] = useState(1)
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
 
-  // Campos de Cadastro / Perfil
   const [role, setRole] = useState('worker')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -25,29 +21,23 @@ export default function App() {
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarPreview, setAvatarPreview] = useState('')
 
-  // Campos Empresa
   const [cnpj, setCnpj] = useState('')
   const [sector, setSector] = useState('')
-
-  // Campos Trabalhador
   const [cpf, setCpf] = useState('')
   const [age, setAge] = useState('')
   const [skills, setSkills] = useState('')
 
-  // Campos Localização
   const [cep, setCep] = useState('')
   const [stateUf, setStateUf] = useState('')
   const [city, setCity] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
   const [address, setAddress] = useState('')
 
-  // Estados de Turnos e Candidaturas
   const [shifts, setShifts] = useState([])
   const [applications, setApplications] = useState([])
   const [cityFilter, setCityFilter] = useState('')
   const [loadingShifts, setLoadingShifts] = useState(true)
 
-  // Novo Turno (Empresa)
   const [title, setTitle] = useState('')
   const [shiftDesc, setShiftDesc] = useState('')
   const [payRate, setPayRate] = useState('')
@@ -125,7 +115,7 @@ export default function App() {
           setAddress(data.logradouro || '')
         }
       } catch (err) {
-        console.error('Erro ao buscar CEP:', err)
+        console.error('Erro CEP:', err)
       }
     }
   }
@@ -139,10 +129,7 @@ export default function App() {
       .from('avatars')
       .upload(filePath, avatarFile, { upsert: true })
 
-    if (uploadError) {
-      console.error('Erro upload foto:', uploadError.message)
-      return avatarPreview || null
-    }
+    if (uploadError) return avatarPreview || null
 
     const { data } = supabase.storage.from('avatars').getPublicUrl(filePath)
     return data.publicUrl
@@ -199,7 +186,6 @@ export default function App() {
       await supabase.from('profiles').upsert(profilePayload)
       await loadUserData(userId)
     }
-
     setAuthLoading(false)
   }
 
@@ -226,15 +212,10 @@ export default function App() {
       address
     }
 
-    const { error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', session.user.id)
-
-    if (error) {
-      alert('Erro ao salvar perfil: ' + error.message)
-    } else {
-      alert('Perfil atualizado com sucesso!')
+    const { error } = await supabase.from('profiles').update(updates).eq('id', session.user.id)
+    if (error) alert('Erro: ' + error.message)
+    else {
+      alert('Perfil atualizado!')
       await loadUserData(session.user.id)
     }
     setAuthLoading(false)
@@ -286,11 +267,7 @@ export default function App() {
         .order('created_at', { ascending: false })
       setApplications(data || [])
     } else {
-      const { data: myShifts } = await supabase
-        .from('shifts')
-        .select('id')
-        .eq('company_id', currentProfile.id)
-
+      const { data: myShifts } = await supabase.from('shifts').select('id').eq('company_id', currentProfile.id)
       const shiftIds = (myShifts || []).map((s) => s.id)
       if (shiftIds.length === 0) {
         setApplications([])
@@ -318,7 +295,7 @@ export default function App() {
 
     const locationLabel = profile.neighborhood
       ? `${profile.neighborhood}, ${profile.city || ''} - ${profile.state || ''}`
-      : `${profile.city || 'Local não informado'}`
+      : `${profile.city || 'Local'}`
 
     const { error } = await supabase.from('shifts').insert([
       {
@@ -331,9 +308,8 @@ export default function App() {
       }
     ])
 
-    if (error) {
-      alert('Erro ao publicar turno: ' + error.message)
-    } else {
+    if (error) alert('Erro: ' + error.message)
+    else {
       setTitle('')
       setShiftDesc('')
       setPayRate('')
@@ -349,20 +325,16 @@ export default function App() {
     ])
 
     if (error) {
-      if (error.code === '23505') alert('Você já se candidatou a este turno!')
-      else alert('Erro ao candidatar-se: ' + error.message)
+      if (error.code === '23505') alert('Já se candidatou a este turno!')
+      else alert('Erro: ' + error.message)
     } else {
-      alert('Candidatura enviada com sucesso!')
+      alert('Candidatura enviada!')
       fetchApplications(profile)
     }
   }
 
   async function handleApplicationStatus(appId, shiftId, newStatus) {
-    const { error } = await supabase
-      .from('shift_applications')
-      .update({ status: newStatus })
-      .eq('id', appId)
-
+    const { error } = await supabase.from('shift_applications').update({ status: newStatus }).eq('id', appId)
     if (!error) {
       if (newStatus === 'accepted') {
         await supabase.from('shifts').update({ status: 'filled' }).eq('id', shiftId)
@@ -372,9 +344,6 @@ export default function App() {
     }
   }
 
-  // ============================================================================
-  // TELA DE AUTENTICAÇÃO (LOGIN + CADASTRO EM 3 ETAPAS)
-  // ============================================================================
   if (!session) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center p-4">
@@ -396,7 +365,6 @@ export default function App() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white"
-                    placeholder="seu@email.com"
                   />
                 </div>
                 <div>
@@ -407,323 +375,366 @@ export default function App() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white"
-                    placeholder="••••••••"
                   />
                 </div>
 
-                {authError && (
-                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-lg">
-                    {authError}
-                  </p>
-                )}
+                {authError && <p className="text-xs text-red-400 bg-red-500/10 p-2.5 rounded-lg">{authError}</p>}
 
-                <button
-                  type="submit"
-                  disabled={authLoading}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg transition"
-                >
-                  {authLoading ? 'Entrando...' : 'Entrar'}
+                <button type="submit" disabled={authLoading} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                  {authLoading ? 'A entrar...' : 'Entrar'}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => { setAuthMode('signup'); setSignupStep(1); setAuthError('') }}
-                  className="w-full text-center text-xs text-slate-400 hover:text-white pt-2"
-                >
-                  Não tem conta? <span className="text-emerald-400 font-medium">Criar cadastro completo</span>
+                <button type="button" onClick={() => { setAuthMode('signup'); setSignupStep(1); setAuthError('') }} className="w-full text-center text-xs text-slate-400 hover:text-white pt-2">
+                  Não tem conta? <span className="text-emerald-400 font-medium">Criar cadastro</span>
                 </button>
               </form>
             ) : (
               <div>
-                {/* Indicador de Etapas */}
                 <div className="flex items-center justify-between mb-6">
                   {[1, 2, 3].map((step) => (
                     <div key={step} className="flex items-center flex-1 last:flex-none">
-                      <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                          signupStep >= step
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}
-                      >
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${signupStep >= step ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
                         {step}
                       </div>
-                      {step < 3 && (
-                        <div
-                          className={`h-0.5 flex-1 mx-2 ${
-                            signupStep > step ? 'bg-emerald-600' : 'bg-slate-800'
-                          }`}
-                        />
-                      )}
+                      {step < 3 && <div className={`h-0.5 flex-1 mx-2 ${signupStep > step ? 'bg-emerald-600' : 'bg-slate-800'}`} />}
                     </div>
                   ))}
                 </div>
 
-                {/* ETAPA 1: TIPO DE PERFIL E ACESSO */}
                 {signupStep === 1 && (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      setSignupStep(2)
-                    }}
-                    className="space-y-4"
-                  >
+                  <form onSubmit={(e) => { e.preventDefault(); setSignupStep(2) }} className="space-y-4">
                     <h2 className="text-lg font-semibold text-white">Etapa 1: Tipo de Conta</h2>
                     <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setRole('worker')}
-                        className={`p-3 rounded-xl border text-left transition ${
-                          role === 'worker'
-                            ? 'bg-emerald-500/10 border-emerald-500 text-white'
-                            : 'bg-slate-950 border-slate-800 text-slate-400'
-                        }`}
-                      >
+                      <button type="button" onClick={() => setRole('worker')} className={`p-3 rounded-xl border text-left ${role === 'worker' ? 'bg-emerald-500/10 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
                         <div className="text-sm font-semibold">Trabalhador</div>
-                        <div className="text-[11px] opacity-80 mt-0.5">Busco turnos extras</div>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setRole('company')}
-                        className={`p-3 rounded-xl border text-left transition ${
-                          role === 'company'
-                            ? 'bg-emerald-500/10 border-emerald-500 text-white'
-                            : 'bg-slate-950 border-slate-800 text-slate-400'
-                        }`}
-                      >
+                      <button type="button" onClick={() => setRole('company')} className={`p-3 rounded-xl border text-left ${role === 'company' ? 'bg-emerald-500/10 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
                         <div className="text-sm font-semibold">Empresa</div>
-                        <div className="text-[11px] opacity-80 mt-0.5">Quero contratar</div>
                       </button>
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Email de acesso</label>
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white"
-                        placeholder="contato@exemplo.com"
-                      />
+                      <label className="block text-xs text-slate-400 mb-1">Email</label>
+                      <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Senha (mínimo 6 dígitos)</label>
-                      <input
-                        type="password"
-                        required
-                        minLength={6}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white"
-                        placeholder="••••••••"
-                      />
+                      <label className="block text-xs text-slate-400 mb-1">Senha (mín. 6 dígitos)</label>
+                      <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
                     </div>
 
-                    <button
-                      type="submit"
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg"
-                    >
+                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
                       Próxima Etapa →
                     </button>
                   </form>
                 )}
 
-                {/* ETAPA 2: DADOS PROFISSIONAIS E FOTO */}
                 {signupStep === 2 && (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      setSignupStep(3)
-                    }}
-                    className="space-y-3"
-                  >
-                    <h2 className="text-lg font-semibold text-white">
-                      {role === 'company' ? 'Etapa 2: Dados da Empresa' : 'Etapa 2: Seus Dados'}
-                    </h2>
-
-                    {/* Foto de Perfil / Logo */}
+                  <form onSubmit={(e) => { e.preventDefault(); setSignupStep(3) }} className="space-y-3">
+                    <h2 className="text-lg font-semibold text-white">Etapa 2: Dados</h2>
                     <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800">
-                      {avatarPreview ? (
-                        <img src={avatarPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400">
-                          Foto
-                        </div>
-                      )}
+                      {avatarPreview ? <img src={avatarPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400">Foto</div>}
                       <div className="flex-1">
-                        <label className="block text-xs text-slate-300 font-medium mb-1">
-                          {role === 'company' ? 'Logo da Empresa' : 'Sua Foto de Perfil'}
-                        </label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0]
-                            if (file) {
-                              setAvatarFile(file)
-                              setAvatarPreview(URL.createObjectURL(file))
-                            }
-                          }}
-                          className="text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:bg-slate-800 file:text-white"
-                        />
+                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-slate-400" />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">
-                        {role === 'company' ? 'Nome Comercial da Empresa' : 'Nome Completo'}
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                        placeholder={role === 'company' ? 'Ex: Restaurante Sabor Real' : 'Ex: Carlos Eduardo Silva'}
-                      />
+                      <label className="block text-xs text-slate-400 mb-1">{role === 'company' ? 'Nome da Empresa' : 'Nome Completo'}</label>
+                      <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                     </div>
 
                     {role === 'company' ? (
                       <>
                         <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-slate-400 mb-1">CNPJ</label>
-                            <input
-                              type="text"
-                              required
-                              value={cnpj}
-                              onChange={(e) => setCnpj(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                              placeholder="00.000.000/0001-00"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-slate-400 mb-1">Setor</label>
-                            <select
-                              required
-                              value={sector}
-                              onChange={(e) => setSector(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                            >
-                              <option value="">Selecione...</option>
-                              <option value="Alimentação e Bares">Alimentação e Bares</option>
-                              <option value="Varejo e Comércio">Varejo e Comércio</option>
-                              <option value="Logística e Estoque">Logística e Estoque</option>
-                              <option value="Eventos e Hotelaria">Eventos e Hotelaria</option>
-                              <option value="Limpeza e Serviços">Limpeza e Serviços</option>
-                            </select>
-                          </div>
+                          <input type="text" required placeholder="CNPJ" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <input type="text" required placeholder="Setor" value={sector} onChange={(e) => setSector(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                         </div>
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">Telefone / WhatsApp</label>
-                          <input
-                            type="text"
-                            required
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                            placeholder="(62) 99999-9999"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">Descrição sobre a empresa</label>
-                          <textarea
-                            rows={2}
-                            required
-                            value={bio}
-                            onChange={(e) => setBio(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                            placeholder="Conte brevemente sobre o estabelecimento e ambiente de trabalho..."
-                          />
-                        </div>
+                        <input type="text" required placeholder="Telefone" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <textarea rows={2} required placeholder="Descrição" value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </>
                     ) : (
                       <>
                         <div className="grid grid-cols-3 gap-2">
-                          <div className="col-span-2">
-                            <label className="block text-xs text-slate-400 mb-1">CPF</label>
-                            <input
-                              type="text"
-                              required
-                              value={cpf}
-                              onChange={(e) => setCpf(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                              placeholder="000.000.000-00"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-slate-400 mb-1">Idade</label>
-                            <input
-                              type="number"
-                              required
-                              min={16}
-                              max={90}
-                              value={age}
-                              onChange={(e) => setAge(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                              placeholder="24"
-                            />
-                          </div>
+                          <input type="text" required placeholder="CPF" value={cpf} onChange={(e) => setCpf(e.target.value)} className="col-span-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <input type="number" required placeholder="Idade" value={age} onChange={(e) => setAge(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                         </div>
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">Telefone / WhatsApp</label>
-                          <input
-                            type="text"
-                            required
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                            placeholder="(62) 99999-9999"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-1">Funções / Experiência</label>
-                          <input
-                            type="text"
-                            required
-                            value={skills}
-                            onChange={(e) => setSkills(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
-                            placeholder="Ex: Garçom, Caixa, Repositor, Cozinha"
-                          />
-                        </div>
+                        <input type="text" required placeholder="Telefone" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="text" required placeholder="Habilidades (ex: Garçom, Caixa)" value={skills} onChange={(e) => setSkills(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </>
                     )}
 
                     <div className="flex gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setSignupStep(1)}
-                        className="w-1/3 bg-slate-800 text-slate-300 text-sm py-2.5 rounded-lg"
-                      >
-                        ← Voltar
-                      </button>
-                      <button
-                        type="submit"
-                        className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-2.5 rounded-lg"
-                      >
-                        Próxima Etapa →
+                      <button type="button" onClick={() => setSignupStep(1)} className="w-1/3 bg-slate-800 text-slate-300 text-sm py-2.5 rounded-lg">← Voltar</button>
+                      <button type="submit" className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-2.5 rounded-lg">Próxima →</button>
+                    </div>
+                  </form>
+                )}
+
+                {signupStep === 3 && (
+                  <form onSubmit={handleCompleteSignup} className="space-y-3">
+                    <h2 className="text-lg font-semibold text-white">Etapa 3: Localização</h2>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="text" required placeholder="CEP" maxLength={9} value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="text" required placeholder="UF" maxLength={2} value={stateUf} onChange={(e) => setStateUf(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="text" required placeholder="Cidade" value={city} onChange={(e) => setCity(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="text" required placeholder="Bairro" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    </div>
+                    <input type="text" required placeholder="Endereço / Rua e Número" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+
+                    {authError && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded">{authError}</p>}
+
+                    <div className="flex gap-2 pt-2">
+                      <button type="button" onClick={() => setSignupStep(2)} className="w-1/3 bg-slate-800 text-slate-300 text-sm py-2.5 rounded-lg">← Voltar</button>
+                      <button type="submit" disabled={authLoading} className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-2.5 rounded-lg">
+                        {authLoading ? 'A concluir...' : 'Concluir ✓'}
                       </button>
                     </div>
                   </form>
                 )}
 
-                {/* ETAPA 3: LOCALIZAÇÃO COMPLETA */}
-                {signupStep === 3 && (
-                  <form onSubmit={handleCompleteSignup} className="space-y-3">
-                    <h2 className="text-lg font-semibold text-white">Etapa 3: Localização</h2>
-                    <p className="text-xs text-slate-400">
-                      Usamos sua cidade e região para conectar turnos próximos.
-                    </p>
+                <button type="button" onClick={() => setAuthMode('login')} className="w-full text-center text-xs text-slate-400 hover:text-white mt-4">
+                  Já possui conta? Voltar ao login
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">CEP</label>
-                        <input
-                          type="text"
-                          required
-                          maxLength={9}
-                          value={cep}
-                          onChange={(e) => handleCepLookup(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-24">
+      <header className="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-10 px-4 py-3">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="Avatar" className="w-9 h-9 rounded-full object-cover border border-slate-700" />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-emerald-600/20 text-emerald-400 flex items-center justify-center font-bold text-sm">
+                {(profile?.full_name || 'T')[0].toUpperCase()}
+              </div>
+            )}
+            <div>
+              <h1 className="text-base font-bold text-white leading-tight">TurnLevel</h1>
+              <p className="text-[11px] text-slate-400">
+                {profile?.full_name} • {profile?.city || 'Sem cidade'} ({profile?.role === 'company' ? 'Empresa' : 'Trabalhador'})
+              </p>
+            </div>
+          </div>
+          <button onClick={() => supabase.auth.signOut()} className="text-xs bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 px-3 py-1.5 rounded-lg transition">
+            Sair
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto p-4 space-y-6">
+        {loadingProfile ? (
+          <p className="text-sm text-slate-400 text-center py-10">A carregar dados...</p>
+        ) : (
+          <>
+            {activeTab === 'shifts' && (
+              <div className="space-y-6">
+                {profile?.role === 'company' && (
+                  <section className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                    <h2 className="text-base font-semibold text-white mb-3">Publicar Novo Turno</h2>
+                    <form onSubmit={handleCreateShift} className="grid gap-3 sm:grid-cols-2">
+                      <input type="text" required placeholder="Função (ex: Garçom)" value={title} onChange={(e) => setTitle(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="number" step="0.01" required placeholder="Valor (R$)" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="datetime-local" required value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="text" placeholder="Requisitos (opcional)" value={shiftDesc} onChange={(e) => setShiftDesc(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <button type="submit" className="sm:col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-2.5 rounded-lg">
+                        + Publicar Vaga
+                      </button>
+                    </form>
+                  </section>
+                )}
+
+                <section className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2 items-center justify-between">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-[11px] text-slate-400 mb-1">Filtrar por cidade ou bairro</label>
+                    <input type="text" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} placeholder="Ex: Goiânia..." className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-white" />
+                  </div>
+                  <div className="flex gap-2 pt-4">
+                    <button onClick={() => fetchShifts(cityFilter)} className="bg-emerald-600 text-white text-xs font-medium px-3 py-2 rounded-lg">Filtrar</button>
+                    <button onClick={() => { setCityFilter(''); fetchShifts('') }} className="bg-slate-800 text-slate-300 text-xs px-3 py-2 rounded-lg">Todas</button>
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <h2 className="text-base font-semibold text-white">Turnos Disponíveis ({shifts.length})</h2>
+                  {loadingShifts ? (
+                    <p className="text-sm text-slate-400">A procurar turnos...</p>
+                  ) : shifts.length === 0 ? (
+                    <div className="bg-slate-900 border border-dashed border-slate-800 rounded-xl p-8 text-center">
+                      <p className="text-sm text-slate-400">Nenhum turno encontrado.</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {shifts.map((shift) => {
+                        const applied = applications.some((a) => a.shift_id === shift.id)
+                        return (
+                          <div key={shift.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-4">
+                            <div>
+                              <div className="flex items-center gap-2.5 mb-3 pb-2.5 border-b border-slate-800/70">
+                                {shift.company?.avatar_url ? (
+                                  <img src={shift.company.avatar_url} alt="Logo" className="w-8 h-8 rounded-full object-cover" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300">
+                                    {(shift.company?.full_name || 'E')[0]}
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-200">{shift.company?.full_name || 'Empresa'}</p>
+                                  <p className="text-[11px] text-slate-400">{shift.company?.sector || 'Serviços'}</p>
+                                </div>
+                              </div>
+                              <h3 className="font-semibold text-white text-base">{shift.title}</h3>
+                              {shift.description && <p className="text-xs text-slate-400 mt-1">{shift.description}</p>}
+                              <p className="text-xs text-slate-300 mt-2">📍 {shift.location}</p>
+                              <p className="text-xs text-slate-400 mt-1">📅 {new Date(shift.shift_date).toLocaleString('pt-BR')}</p>
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
+                              <span className="text-emerald-400 font-bold text-base">R$ {Number(shift.pay_rate).toFixed(2)}</span>
+                              {profile?.role === 'worker' ? (
+                                shift.status !== 'open' ? (
+                                  <span className="text-xs bg-slate-800 text-slate-400 px-3 py-1.5 rounded-lg">Preenchido</span>
+                                ) : applied ? (
+                                  <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg">Candidatado ✓</span>
+                                ) : (
+                                  <button onClick={() => handleApply(shift.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition">
+                                    Candidatar-se
+                                  </button>
+                                )
+                              ) : (
+                                <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded">{shift.status === 'open' ? 'Aberto' : 'Preenchido'}</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+
+            {activeTab === 'applications' && (
+              <section className="space-y-4">
+                <h2 className="text-lg font-semibold text-white">
+                  {profile?.role === 'company' ? 'Candidatos Recebidos' : 'Minhas Candidaturas'}
+                </h2>
+                {applications.length === 0 ? (
+                  <div className="bg-slate-900 border border-dashed border-slate-800 rounded-xl p-8 text-center">
+                    <p className="text-sm text-slate-400">Sem registos no momento.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {applications.map((app) => (
+                      <div key={app.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-xs text-emerald-400 font-medium">Turno: {app.shift?.title} (R$ {Number(app.shift?.pay_rate || 0).toFixed(2)})</span>
+                            {profile?.role === 'company' ? (
+                              <div className="flex items-center gap-3 mt-2">
+                                {app.worker?.avatar_url ? <img src={app.worker.avatar_url} alt="Foto" className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">{(app.worker?.full_name || 'T')[0]}</div>}
+                                <div>
+                                  <h3 className="font-semibold text-white text-sm">{app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}</h3>
+                                  <p className="text-xs text-slate-400">📍 {app.worker?.neighborhood}, {app.worker?.city} • 📞 {app.worker?.phone}</p>
+                                  {app.worker?.skills && <p className="text-xs text-slate-300 mt-1">🛠 {app.worker.skills}</p>}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-1">
+                                <h3 className="font-semibold text-white text-sm">{app.shift?.company?.full_name}</h3>
+                                <p className="text-xs text-slate-400">📍 {app.shift?.location}</p>
+                              </div>
+                            )}
+                          </div>
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${app.status === 'accepted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : app.status === 'rejected' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                            {app.status === 'accepted' ? 'Aceito' : app.status === 'rejected' ? 'Recusado' : 'Pendente'}
+                          </span>
+                        </div>
+                        {profile?.role === 'company' && app.status === 'pending' && (
+                          <div className="flex gap-2 pt-2 border-t border-slate-800">
+                            <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'accepted')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2 rounded-lg">Aceitar</button>
+                            <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'rejected')} className="flex-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium py-2 rounded-lg">Recusar</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === 'profile' && (
+              <section className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                <h2 className="text-lg font-semibold text-white mb-4">Editar Perfil</h2>
+                <form onSubmit={handleUpdateProfile} className="space-y-4">
+                  <div className="flex items-center gap-4 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    {avatarPreview ? <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover" /> : <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-sm text-slate-400">Foto</div>}
+                    <div>
+                      <label className="block text-xs text-slate-300 font-medium mb-1">Alterar Foto / Logo</label>
+                      <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-slate-400" />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Nome</label>
+                      <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Telefone</label>
+                      <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    </div>
+                    {profile?.role === 'company' ? (
+                      <>
+                        <input type="text" placeholder="CNPJ" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="text" placeholder="Setor" value={sector} onChange={(e) => setSector(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      </>
+                    ) : (
+                      <>
+                        <input type="text" placeholder="CPF" value={cpf} onChange={(e) => setCpf(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="number" placeholder="Idade" value={age} onChange={(e) => setAge(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="text" placeholder="Habilidades" value={skills} onChange={(e) => setSkills(e.target.value)} className="sm:col-span-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      </>
+                    )}
+                    <textarea rows={2} placeholder="Bio" value={bio} onChange={(e) => setBio(e.target.value)} className="sm:col-span-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="text" placeholder="CEP" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="text" placeholder="UF" value={stateUf} onChange={(e) => setStateUf(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="text" placeholder="Cidade" value={city} onChange={(e) => setCity(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="text" placeholder="Bairro" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="text" placeholder="Endereço" value={address} onChange={(e) => setAddress(e.target.value)} className="sm:col-span-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                  </div>
+
+                  <button type="submit" disabled={authLoading} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                    {authLoading ? 'A guardar...' : 'Salvar Alterações'}
+                  </button>
+                </form>
+              </section>
+            )}
+          </>
+        )}
+      </main>
+
+      <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 px-4 py-2 z-20">
+        <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
+          <button onClick={() => setActiveTab('shifts')} className={`py-2 rounded-lg text-xs font-medium transition ${activeTab === 'shifts' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
+            Turnos
+          </button>
+          <button onClick={() => { setActiveTab('applications'); fetchApplications(profile) }} className={`py-2 rounded-lg text-xs font-medium transition ${activeTab === 'applications' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
+            {profile?.role === 'company' ? 'Candidatos' : 'Candidaturas'}
+          </button>
+          <button onClick={() => setActiveTab('profile')} className={`py-2 rounded-lg text-xs font-medium transition ${activeTab === 'profile' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
+            Perfil
+          </button>
+        </div>
+      </nav>
+    </div>
+  )
+}
