@@ -26,7 +26,7 @@ const SKILL_OPTIONS = [
   'Vendas / Balcão'
 ]
 
-const AGE_OPTIONS = Array.from({ length: 34 }, (_, i) => i + 17) // 17 a 50
+const AGE_OPTIONS = Array.from({ length: 34 }, (_, i) => i + 17)
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -34,13 +34,11 @@ export default function App() {
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [activeTab, setActiveTab] = useState('shifts')
 
-  // Controle de Autenticação e Cadastro em Etapas
   const [authMode, setAuthMode] = useState('login')
   const [signupStep, setSignupStep] = useState(1)
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
 
-  // Dados Gerais
   const [role, setRole] = useState('worker')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -51,35 +49,28 @@ export default function App() {
   const [avatarFile, setAvatarFile] = useState(null)
   const [avatarPreview, setAvatarPreview] = useState('')
 
-  // Dados Empresa
   const [cnpj, setCnpj] = useState('')
   const [sector, setSector] = useState('')
-
-  // Dados Trabalhador
   const [cpf, setCpf] = useState('')
   const [age, setAge] = useState('20')
   const [selectedSkills, setSelectedSkills] = useState([])
   const [customSkill, setCustomSkill] = useState('')
   const [maxDistance, setMaxDistance] = useState('Até 10 km')
 
-  // Localização Perfil
   const [cep, setCep] = useState('')
   const [stateUf, setStateUf] = useState('')
   const [city, setCity] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
   const [address, setAddress] = useState('')
 
-  // Turnos e Candidaturas
   const [shifts, setShifts] = useState([])
   const [applications, setApplications] = useState([])
   const [cityFilter, setCityFilter] = useState('')
   const [loadingShifts, setLoadingShifts] = useState(true)
 
-  // Modais de Visualização Detalhada
   const [selectedShiftModal, setSelectedShiftModal] = useState(null)
   const [selectedWorkerModal, setSelectedWorkerModal] = useState(null)
 
-  // Formulário de Novo Turno (Empresa)
   const [title, setTitle] = useState('')
   const [vacancies, setVacancies] = useState('1')
   const [workload, setWorkload] = useState('6 horas')
@@ -127,12 +118,6 @@ export default function App() {
       await fetchShifts(initialCity)
       await fetchApplications(prof)
     } else {
-      // Fallback caso o perfil ainda esteja sendo gravado
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user?.user_metadata) {
-        setFullName(user.user_metadata.full_name || '')
-        setRole(user.user_metadata.role || 'worker')
-      }
       await fetchShifts('')
     }
     setLoadingProfile(false)
@@ -151,7 +136,6 @@ export default function App() {
     setAge(prof.age ? String(prof.age) : '20')
     setMaxDistance(prof.max_distance || 'Até 10 km')
 
-    // Separar habilidades marcadas e personalizadas
     if (prof.skills) {
       const all = prof.skills.split(',').map((s) => s.trim()).filter(Boolean)
       const matched = all.filter((s) => SKILL_OPTIONS.includes(s))
@@ -169,7 +153,6 @@ export default function App() {
     setNeighborhood(prof.neighborhood || '')
     setAddress(prof.address || '')
 
-    // Pré-preencher endereço padrão do turno para a empresa
     if (prof.role === 'company') {
       setShiftNeighborhood(prof.neighborhood || '')
       setShiftStreet(prof.address || '')
@@ -276,10 +259,7 @@ export default function App() {
         address
       }
 
-      const { error: upsertError } = await supabase.from('profiles').upsert(profilePayload)
-      if (!upsertError) {
-        setProfile(profilePayload)
-      }
+      await supabase.from('profiles').upsert(profilePayload)
       await loadUserData(userId)
     }
     setAuthLoading(false)
@@ -332,7 +312,7 @@ export default function App() {
       .select(`
         *,
         company:profiles!shifts_company_id_fkey (
-          full_name, avatar_url, sector, bio, phone_ddd, phone, city, state, neighborhood, address
+          id, full_name, avatar_url, sector, bio, phone_ddd, phone, city, state, neighborhood, address, cnpj
         )
       `)
       .order('created_at', { ascending: false })
@@ -365,7 +345,7 @@ export default function App() {
           *,
           shift:shifts (
             *,
-            company:profiles!shifts_company_id_fkey (full_name, city, neighborhood, avatar_url, bio, phone_ddd, phone)
+            company:profiles!shifts_company_id_fkey (id, full_name, city, neighborhood, avatar_url, bio, phone_ddd, phone, sector, cnpj)
           )
         `)
         .eq('worker_id', currentProfile.id)
@@ -460,9 +440,6 @@ export default function App() {
     }
   }
 
-  // ============================================================================
-  // ECRÃ DE LOGIN E CADASTRO EM 3 ETAPAS
-  // ============================================================================
   if (!session) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center p-4">
@@ -478,23 +455,11 @@ export default function App() {
                 <h2 className="text-lg font-semibold text-white">Entrar na conta</h2>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white"
-                  />
+                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Senha</label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white"
-                  />
+                  <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
                 </div>
 
                 {authError && <p className="text-xs text-red-400 bg-red-500/10 p-2.5 rounded-lg">{authError}</p>}
@@ -520,7 +485,6 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* ETAPA 1 */}
                 {signupStep === 1 && (
                   <form onSubmit={(e) => { e.preventDefault(); setSignupStep(2) }} className="space-y-4">
                     <h2 className="text-lg font-semibold text-white">Etapa 1: Tipo de Conta</h2>
@@ -550,7 +514,6 @@ export default function App() {
                   </form>
                 )}
 
-                {/* ETAPA 2 */}
                 {signupStep === 2 && (
                   <form onSubmit={(e) => { e.preventDefault(); setSignupStep(3) }} className="space-y-3">
                     <h2 className="text-lg font-semibold text-white">
@@ -558,15 +521,9 @@ export default function App() {
                     </h2>
 
                     <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800">
-                      {avatarPreview ? (
-                        <img src={avatarPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400">Foto</div>
-                      )}
+                      {avatarPreview ? <img src={avatarPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400">Foto</div>}
                       <div className="flex-1">
-                        <label className="block text-[11px] text-slate-300 mb-1">
-                          {role === 'company' ? 'Logo da Empresa' : 'Sua Foto de Perfil'}
-                        </label>
+                        <label className="block text-[11px] text-slate-300 mb-1">{role === 'company' ? 'Logo da Empresa' : 'Sua Foto de Perfil'}</label>
                         <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-slate-400" />
                       </div>
                     </div>
@@ -582,7 +539,6 @@ export default function App() {
                           <label className="block text-xs text-slate-400 mb-1">CNPJ</label>
                           <input type="text" required placeholder="00.000.000/0001-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                         </div>
-
                         <div>
                           <label className="block text-xs text-slate-400 mb-1">Telefone / WhatsApp</label>
                           <div className="flex gap-2">
@@ -592,10 +548,9 @@ export default function App() {
                             <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                           </div>
                         </div>
-
                         <div>
                           <label className="block text-xs text-slate-400 mb-1">Conte sobre sua empresa</label>
-                          <textarea rows={3} required placeholder="Fale sobre o ramo de atuação, ambiente e o que fazem..." value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <textarea rows={3} required placeholder="Ramo de atuação, ambiente..." value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                         </div>
                       </>
                     ) : (
@@ -608,13 +563,10 @@ export default function App() {
                           <div>
                             <label className="block text-xs text-slate-400 mb-1">Idade</label>
                             <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
-                              {AGE_OPTIONS.map((num) => (
-                                <option key={num} value={num}>{num} anos</option>
-                              ))}
+                              {AGE_OPTIONS.map((num) => <option key={num} value={num}>{num} anos</option>)}
                             </select>
                           </div>
                         </div>
-
                         <div>
                           <label className="block text-xs text-slate-400 mb-1">Telefone / WhatsApp</label>
                           <div className="flex gap-2">
@@ -624,35 +576,19 @@ export default function App() {
                             <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                           </div>
                         </div>
-
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1.5">Habilidades (selecione uma ou mais)</label>
+                          <label className="block text-xs text-slate-400 mb-1.5">Habilidades</label>
                           <div className="flex flex-wrap gap-1.5 mb-2">
                             {SKILL_OPTIONS.map((skill) => {
                               const active = selectedSkills.includes(skill)
                               return (
-                                <button
-                                  type="button"
-                                  key={skill}
-                                  onClick={() => toggleSkill(skill)}
-                                  className={`text-[11px] px-2.5 py-1 rounded-full border transition ${
-                                    active
-                                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-medium'
-                                      : 'bg-slate-950 border-slate-800 text-slate-400'
-                                  }`}
-                                >
+                                <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-medium' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
                                   {active ? '✓ ' : '+ '}{skill}
                                 </button>
                               )
                             })}
                           </div>
-                          <input
-                            type="text"
-                            placeholder="Outra habilidade (opcional, escreva aqui...)"
-                            value={customSkill}
-                            onChange={(e) => setCustomSkill(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white"
-                          />
+                          <input type="text" placeholder="Outra habilidade..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
                         </div>
                       </>
                     )}
@@ -664,7 +600,6 @@ export default function App() {
                   </form>
                 )}
 
-                {/* ETAPA 3 */}
                 {signupStep === 3 && (
                   <form onSubmit={handleCompleteSignup} className="space-y-3">
                     <h2 className="text-lg font-semibold text-white">Etapa 3: Localização</h2>
@@ -674,13 +609,13 @@ export default function App() {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <input type="text" required placeholder="Cidade" value={city} onChange={(e) => setCity(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
-                      <input type="text" required placeholder="Bairro / Setor" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="text" required placeholder="Bairro" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                     </div>
-                    <input type="text" required placeholder="Rua / Número / Quadra" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="text" required placeholder="Rua / Número" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
 
                     {role === 'worker' && (
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Distância máxima para trabalhar</label>
+                        <label className="block text-xs text-slate-400 mb-1">Distância máxima</label>
                         <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
                           <option value="Até 5 km (Mesmo bairro)">Até 5 km (Mesmo bairro)</option>
                           <option value="Até 10 km">Até 10 km</option>
@@ -695,7 +630,7 @@ export default function App() {
                     <div className="flex gap-2 pt-2">
                       <button type="button" onClick={() => setSignupStep(2)} className="w-1/3 bg-slate-800 text-slate-300 text-sm py-2.5 rounded-lg">← Voltar</button>
                       <button type="submit" disabled={authLoading} className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-2.5 rounded-lg">
-                        {authLoading ? 'A concluir...' : 'Concluir Cadastro ✓'}
+                        {authLoading ? 'A concluir...' : 'Concluir ✓'}
                       </button>
                     </div>
                   </form>
@@ -712,9 +647,6 @@ export default function App() {
     )
   }
 
-  // ============================================================================
-  // PAINEL AUTENTICADO
-  // ============================================================================
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24">
       <header className="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-10 px-4 py-3">
@@ -745,9 +677,6 @@ export default function App() {
           <p className="text-sm text-slate-400 text-center py-10">A carregar dados...</p>
         ) : (
           <>
-            {/* ============================================================== */}
-            {/* ABA 1: TURNOS                                                  */}
-            {/* ============================================================== */}
             {activeTab === 'shifts' && (
               <div className="space-y-6">
                 {(profile?.role || role) === 'company' && (
@@ -756,18 +685,14 @@ export default function App() {
                     <form onSubmit={handleCreateShift} className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <label className="block text-xs text-slate-400 mb-1">Função / Cargo</label>
-                        <input type="text" required placeholder="Ex: Garçom / Auxiliar de Cozinha" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="text" required placeholder="Ex: Garçom" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
-
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Quantidade de Vagas</label>
+                        <label className="block text-xs text-slate-400 mb-1">Vagas</label>
                         <select value={vacancies} onChange={(e) => setVacancies(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
-                          {[1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map((v) => (
-                            <option key={v} value={v}>{v} {v === 1 ? 'vaga' : 'vagas'}</option>
-                          ))}
+                          {[1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map((v) => <option key={v} value={v}>{v} vagas</option>)}
                         </select>
                       </div>
-
                       <div>
                         <label className="block text-xs text-slate-400 mb-1">Carga Horária</label>
                         <select value={workload} onChange={(e) => setWorkload(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
@@ -778,22 +703,18 @@ export default function App() {
                           <option value="12 horas (Plantão)">12 horas (Plantão)</option>
                         </select>
                       </div>
-
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Horário (Ex: 18:00 às 00:00)</label>
+                        <label className="block text-xs text-slate-400 mb-1">Horário</label>
                         <input type="text" required placeholder="18:00 às 00:00" value={shiftHours} onChange={(e) => setShiftHours(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
-
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Valor do Turno (R$)</label>
+                        <label className="block text-xs text-slate-400 mb-1">Valor (R$)</label>
                         <input type="number" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
-
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Data do Turno</label>
+                        <label className="block text-xs text-slate-400 mb-1">Data</label>
                         <input type="datetime-local" required value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
-
                       <div>
                         <label className="block text-xs text-slate-400 mb-1">Transporte</label>
                         <select value={transportInfo} onChange={(e) => setTransportInfo(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
@@ -802,7 +723,6 @@ export default function App() {
                           <option value="Não fornece transporte">Não fornece transporte</option>
                         </select>
                       </div>
-
                       <div>
                         <label className="block text-xs text-slate-400 mb-1">Alimentação</label>
                         <select value={mealInfo} onChange={(e) => setMealInfo(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
@@ -811,22 +731,18 @@ export default function App() {
                           <option value="Não fornece alimentação">Não fornece alimentação</option>
                         </select>
                       </div>
-
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Bairro / Setor do Turno</label>
-                        <input type="text" required placeholder="Ex: Setor Bueno" value={shiftNeighborhood} onChange={(e) => setShiftNeighborhood(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-slate-400 mb-1">Bairro / Setor</label>
+                        <input type="text" required placeholder="Setor Bueno" value={shiftNeighborhood} onChange={(e) => setShiftNeighborhood(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
-
                       <div>
                         <label className="block text-xs text-slate-400 mb-1">Rua e Número</label>
-                        <input type="text" required placeholder="Ex: Rua T-30, nº 120" value={shiftStreet} onChange={(e) => setShiftStreet(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="text" required placeholder="Rua T-30, nº 120" value={shiftStreet} onChange={(e) => setShiftStreet(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
-
                       <div className="sm:col-span-2">
                         <label className="block text-xs text-slate-400 mb-1">Exigências / Observações</label>
-                        <input type="text" placeholder="Ex: Calça preta, sapato fechado, experiência prévia..." value={requirements} onChange={(e) => setRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="text" placeholder="Calça preta, sapato fechado..." value={requirements} onChange={(e) => setRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
-
                       <button type="submit" className="sm:col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
                         + Publicar Vaga Agora
                       </button>
@@ -837,7 +753,7 @@ export default function App() {
                 <section className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2 items-center justify-between">
                   <div className="flex-1 min-w-[200px]">
                     <label className="block text-[11px] text-slate-400 mb-1">Filtrar por cidade ou bairro</label>
-                    <input type="text" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} placeholder="Ex: Goiânia, Setor Bueno..." className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-white" />
+                    <input type="text" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} placeholder="Ex: Goiânia..." className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-white" />
                   </div>
                   <div className="flex gap-2 pt-4">
                     <button onClick={() => fetchShifts(cityFilter)} className="bg-emerald-600 text-white text-xs font-medium px-3 py-2 rounded-lg">Filtrar</button>
@@ -875,23 +791,14 @@ export default function App() {
                                   )}
                                   <div>
                                     <p className="text-xs font-semibold text-slate-200">{shift.company?.full_name || 'Empresa'}</p>
-                                    <p className="text-[11px] text-emerald-400">Toque para ver detalhes</p>
+                                    <p className="text-[11px] text-emerald-400">Toque para ver detalhes da empresa e vaga</p>
                                   </div>
                                 </div>
-                                {shift.vacancies && (
-                                  <span className="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full">
-                                    {shift.vacancies} {shift.vacancies === 1 ? 'vaga' : 'vagas'}
-                                  </span>
-                                )}
                               </div>
 
                               <h3 className="font-semibold text-white text-base">{shift.title}</h3>
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {shift.workload && <span className="text-[11px] bg-slate-950 border border-slate-800 px-2 py-0.5 rounded text-slate-300">⏱ {shift.workload}</span>}
-                                {shift.meal_info && <span className="text-[11px] bg-slate-950 border border-slate-800 px-2 py-0.5 rounded text-slate-300">🍽 {shift.meal_info}</span>}
-                              </div>
-                              <p className="text-xs text-slate-300 mt-2.5">📍 {shift.location}</p>
-                              <p className="text-xs text-slate-400 mt-1">📅 {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}</p>
+                              <p className="text-xs text-slate-300 mt-2">📍 {shift.location}</p>
+                              <p className="text-xs text-slate-400 mt-1">📅 {new Date(shift.shift_date).toLocaleDateString('pt-BR')}</p>
                             </div>
 
                             <div className="pt-3 border-t border-slate-800 flex justify-between items-center" onClick={(e) => e.stopPropagation()}>
@@ -919,9 +826,6 @@ export default function App() {
               </div>
             )}
 
-            {/* ============================================================== */}
-            {/* ABA 2: CANDIDATURAS & GESTÃO DE CANDIDATOS                     */}
-            {/* ============================================================== */}
             {activeTab === 'applications' && (
               <section className="space-y-4">
                 <h2 className="text-lg font-semibold text-white">
@@ -933,55 +837,84 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {applications.map((app) => (
-                      <div
-                        key={app.id}
-                        onClick={() => {
-                          if ((profile?.role || role) === 'company' && app.worker) {
-                            setSelectedWorkerModal(app)
-                          }
-                        }}
-                        className={`bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 ${(profile?.role || role) === 'company' ? 'cursor-pointer hover:border-slate-700' : ''}`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-xs text-emerald-400 font-medium">Turno: {app.shift?.title} (R$ {Number(app.shift?.pay_rate || 0).toFixed(2)})</span>
-                            {(profile?.role || role) === 'company' ? (
-                              <div className="flex items-center gap-3 mt-2">
-                                {app.worker?.avatar_url ? <img src={app.worker.avatar_url} alt="Foto" className="w-11 h-11 rounded-full object-cover" /> : <div className="w-11 h-11 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">{(app.worker?.full_name || 'T')[0]}</div>}
-                                <div>
-                                  <h3 className="font-semibold text-white text-sm">{app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}</h3>
-                                  <p className="text-xs text-slate-400">📍 {app.worker?.neighborhood}, {app.worker?.city}</p>
-                                  <p className="text-[11px] text-emerald-400 mt-0.5">Toque para ver perfil completo do candidato</p>
+                    {applications.map((app) => {
+                      const isAccepted = app.status === 'accepted'
+                      const companyPhone = app.shift?.company?.phone_ddd && app.shift?.company?.phone ? `55${app.shift.company.phone_ddd}${app.shift.company.phone.replace(/\D/g, '')}` : ''
+                      const workerPhone = app.worker?.phone_ddd && app.worker?.phone ? `55${app.worker.phone_ddd}${app.worker.phone.replace(/\D/g, '')}` : ''
+
+                      return (
+                        <div
+                          key={app.id}
+                          onClick={() => {
+                            if ((profile?.role || role) === 'company' && app.worker) {
+                              setSelectedWorkerModal(app)
+                            }
+                          }}
+                          className={`bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 ${(profile?.role || role) === 'company' ? 'cursor-pointer hover:border-slate-700' : ''}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="text-xs text-emerald-400 font-medium">Turno: {app.shift?.title} (R$ {Number(app.shift?.pay_rate || 0).toFixed(2)})</span>
+                              {(profile?.role || role) === 'company' ? (
+                                <div className="flex items-center gap-3 mt-2">
+                                  {app.worker?.avatar_url ? <img src={app.worker.avatar_url} alt="Foto" className="w-11 h-11 rounded-full object-cover" /> : <div className="w-11 h-11 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">{(app.worker?.full_name || 'T')[0]}</div>}
+                                  <div>
+                                    <h3 className="font-semibold text-white text-sm">{app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}</h3>
+                                    <p className="text-xs text-slate-400">📍 {app.worker?.neighborhood}, {app.worker?.city}</p>
+                                    <p className="text-[11px] text-emerald-400 mt-0.5">Toque para inspecionar perfil completo do candidato</p>
+                                  </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <div className="mt-1">
-                                <h3 className="font-semibold text-white text-sm">{app.shift?.company?.full_name}</h3>
-                                <p className="text-xs text-slate-400">📍 {app.shift?.location}</p>
-                              </div>
-                            )}
+                              ) : (
+                                <div className="mt-1">
+                                  <h3 className="font-semibold text-white text-sm">{app.shift?.company?.full_name}</h3>
+                                  <p className="text-xs text-slate-400">📍 {app.shift?.location}</p>
+                                </div>
+                              )}
+                            </div>
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${isAccepted ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : app.status === 'rejected' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                              {isAccepted ? 'Aceito ✓' : app.status === 'rejected' ? 'Recusado' : 'Pendente'}
+                            </span>
                           </div>
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${app.status === 'accepted' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : app.status === 'rejected' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
-                            {app.status === 'accepted' ? 'Aceito' : app.status === 'rejected' ? 'Recusado' : 'Pendente'}
-                          </span>
+
+                          {/* BOTÃO DO WHATSAPP QUANDO ACEITO */}
+                          {isAccepted && (
+                            <div className="pt-2" onClick={(e) => e.stopPropagation()}>
+                              {(profile?.role || role) === 'company' && workerPhone ? (
+                                <a
+                                  href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20o%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel!%20Vamos%20alinhar%20os%20detalhes?`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2.5 rounded-lg transition"
+                                >
+                                  💬 Chamar Trabalhador no WhatsApp
+                                </a>
+                              ) : (profile?.role || role) === 'worker' && companyPhone ? (
+                                <a
+                                  href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20no%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel!`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2.5 rounded-lg transition"
+                                >
+                                  💬 Falar com a Empresa no WhatsApp
+                                </a>
+                              ) : null}
+                            </div>
+                          )}
+
+                          {(profile?.role || role) === 'company' && app.status === 'pending' && (
+                            <div className="flex gap-2 pt-2 border-t border-slate-800" onClick={(e) => e.stopPropagation()}>
+                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'accepted')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2 rounded-lg">Aceitar</button>
+                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'rejected')} className="flex-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium py-2 rounded-lg">Recusar</button>
+                            </div>
+                          )}
                         </div>
-                        {(profile?.role || role) === 'company' && app.status === 'pending' && (
-                          <div className="flex gap-2 pt-2 border-t border-slate-800" onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'accepted')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2 rounded-lg">Aceitar</button>
-                            <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'rejected')} className="flex-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium py-2 rounded-lg">Recusar</button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </section>
             )}
 
-            {/* ============================================================== */}
-            {/* ABA 3: PERFIL COMPLETO (COM TODOS OS DADOS PREENCHIDOS)        */}
-            {/* ============================================================== */}
             {activeTab === 'profile' && (
               <section className="bg-slate-900 border border-slate-800 rounded-xl p-5">
                 <h2 className="text-lg font-semibold text-white mb-4">Meus Dados Cadastrais</h2>
@@ -999,9 +932,8 @@ export default function App() {
                       <label className="block text-xs text-slate-400 mb-1">Nome</label>
                       <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                     </div>
-
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Telefone / WhatsApp</label>
+                      <label className="block text-xs text-slate-400 mb-1">Telefone</label>
                       <div className="flex gap-2">
                         <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
                           {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
@@ -1009,7 +941,6 @@ export default function App() {
                         <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                       </div>
                     </div>
-
                     {(profile?.role || role) === 'company' ? (
                       <>
                         <div>
@@ -1017,7 +948,7 @@ export default function App() {
                           <input type="text" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">Setor / Ramo</label>
+                          <label className="block text-xs text-slate-400 mb-1">Setor</label>
                           <input type="text" value={sector} onChange={(e) => setSector(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                         </div>
                         <div className="sm:col-span-2">
@@ -1033,14 +964,12 @@ export default function App() {
                         </div>
                         <div>
                           <label className="block text-xs text-slate-400 mb-1">Idade</label>
-                          <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
-                            {AGE_OPTIONS.map((num) => (
-                              <option key={num} value={num}>{num} anos</option>
-                            ))}
+                          <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
+                            {AGE_OPTIONS.map((num) => <option key={num} value={num}>{num} anos</option>)}
                           </select>
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="block text-xs text-slate-400 mb-1">Distância máxima para trabalhar</label>
+                          <label className="block text-xs text-slate-400 mb-1">Distância máxima</label>
                           <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
                             <option value="Até 5 km (Mesmo bairro)">Até 5 km (Mesmo bairro)</option>
                             <option value="Até 10 km">Até 10 km</option>
@@ -1054,28 +983,13 @@ export default function App() {
                             {SKILL_OPTIONS.map((skill) => {
                               const active = selectedSkills.includes(skill)
                               return (
-                                <button
-                                  type="button"
-                                  key={skill}
-                                  onClick={() => toggleSkill(skill)}
-                                  className={`text-[11px] px-2.5 py-1 rounded-full border transition ${
-                                    active
-                                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-medium'
-                                      : 'bg-slate-950 border-slate-800 text-slate-400'
-                                  }`}
-                                >
+                                <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-medium' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
                                   {active ? '✓ ' : '+ '}{skill}
                                 </button>
                               )
                             })}
                           </div>
-                          <input
-                            type="text"
-                            placeholder="Outras habilidades..."
-                            value={customSkill}
-                            onChange={(e) => setCustomSkill(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white"
-                          />
+                          <input type="text" placeholder="Outras..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
                         </div>
                       </>
                     )}
@@ -1093,11 +1007,11 @@ export default function App() {
                       <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Bairro / Setor</label>
+                      <label className="block text-xs text-slate-400 mb-1">Bairro</label>
                       <input type="text" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="block text-xs text-slate-400 mb-1">Endereço / Rua e Número</label>
+                      <label className="block text-xs text-slate-400 mb-1">Endereço</label>
                       <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
                     </div>
                   </div>
@@ -1112,9 +1026,7 @@ export default function App() {
         )}
       </main>
 
-      {/* ==================================================================== */}
-      {/* MODAL 1: DETALHES DO TURNO E DA EMPRESA                              */}
-      {/* ==================================================================== */}
+      {/* MODAL: DETALHES DO TURNO E PERFIL DA EMPRESA */}
       {selectedShiftModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -1129,7 +1041,8 @@ export default function App() {
                 )}
                 <div>
                   <h3 className="font-bold text-white text-base">{selectedShiftModal.company?.full_name || 'Empresa'}</h3>
-                  <p className="text-xs text-slate-400">{selectedShiftModal.company?.city} - {selectedShiftModal.company?.state}</p>
+                  <p className="text-xs text-slate-400">CNPJ: {selectedShiftModal.company?.cnpj || 'Não informado'}</p>
+                  <p className="text-xs text-emerald-400">📍 {selectedShiftModal.company?.city} - {selectedShiftModal.company?.state}</p>
                 </div>
               </div>
               <button onClick={() => setSelectedShiftModal(null)} className="text-slate-400 hover:text-white text-lg px-2">✕</button>
@@ -1168,11 +1081,9 @@ export default function App() {
               </div>
 
               <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
-                <p className="text-slate-300">📅 <strong>Data e Horário:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
-                <p className="text-slate-300">📍 <strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
-                {selectedShiftModal.requirements && (
-                  <p className="text-slate-300 pt-1">📋 <strong>Exigências:</strong> {selectedShiftModal.requirements}</p>
-                )}
+                <p className="text-slate-300">📅 <strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
+                <p className="text-slate-300">📍 <strong>Local do Turno:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
+                {selectedShiftModal.requirements && <p className="text-slate-300 pt-1">📋 <strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
               </div>
             </div>
 
@@ -1183,10 +1094,7 @@ export default function App() {
                     Você já se candidatou a este turno ✓
                   </div>
                 ) : (
-                  <button
-                    onClick={() => handleApply(selectedShiftModal.id)}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg"
-                  >
+                  <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
                     Confirmar Candidatura
                   </button>
                 )}
@@ -1196,9 +1104,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ==================================================================== */}
-      {/* MODAL 2: PERFIL COMPLETO DO CANDIDATO (PARA EMPRESA VER)             */}
-      {/* ==================================================================== */}
+      {/* MODAL: PERFIL COMPLETO DO CANDIDATO */}
       {selectedWorkerModal && selectedWorkerModal.worker && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
@@ -1216,6 +1122,7 @@ export default function App() {
                   <p className="text-xs text-slate-400">
                     {selectedWorkerModal.worker.age ? `${selectedWorkerModal.worker.age} anos` : ''} • {selectedWorkerModal.worker.city}/{selectedWorkerModal.worker.state}
                   </p>
+                  <p className="text-xs text-emerald-400">CPF: {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
                 </div>
               </div>
               <button onClick={() => setSelectedWorkerModal(null)} className="text-slate-400 hover:text-white text-lg px-2">✕</button>
@@ -1223,23 +1130,17 @@ export default function App() {
 
             <div className="space-y-2 text-xs bg-slate-950 p-3.5 rounded-xl border border-slate-800">
               <p className="text-slate-300">📞 <strong>WhatsApp / Telefone:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
-              <p className="text-slate-300">📍 <strong>Bairro / Região:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
-              <p className="text-slate-300">🚗 <strong>Deslocamento:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
+              <p className="text-slate-300">📍 <strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
+              <p className="text-slate-300">🚗 <strong>Raio de Deslocamento:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
               <p className="text-slate-300">🛠 <strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
             </div>
 
             {selectedWorkerModal.status === 'pending' && (
               <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'accepted')}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-3 rounded-lg"
-                >
+                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'accepted')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
                   Aceitar Candidato ✓
                 </button>
-                <button
-                  onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'rejected')}
-                  className="flex-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium py-3 rounded-lg"
-                >
+                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'rejected')} className="flex-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium py-3 rounded-lg">
                   Recusar
                 </button>
               </div>
@@ -1248,7 +1149,6 @@ export default function App() {
         </div>
       )}
 
-      {/* BARRA DE NAVEGAÇÃO INFERIOR */}
       <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 px-4 py-2 z-20">
         <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
           <button onClick={() => setActiveTab('shifts')} className={`py-2 rounded-lg text-xs font-medium transition ${activeTab === 'shifts' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
