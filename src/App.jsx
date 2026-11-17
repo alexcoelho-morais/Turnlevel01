@@ -28,6 +28,32 @@ const SKILL_OPTIONS = [
 
 const AGE_OPTIONS = Array.from({ length: 34 }, (_, i) => i + 17)
 
+function TurnLevelLogo({ size = 'md' }) {
+  const isLg = size === 'lg'
+  return (
+    <div className="inline-flex items-center gap-2.5 select-none">
+      <div className={`${isLg ? 'w-10 h-10 rounded-xl' : 'w-8 h-8 rounded-lg'} bg-lime-400 flex items-center justify-center shadow-[0_0_20px_rgba(163,230,53,0.35)]`}>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#050505"
+          strokeWidth="2.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={isLg ? 'w-6 h-6' : 'w-4 h-4'}
+        >
+          <path d="M5 7h14" />
+          <path d="M12 7v11" />
+          <path d="M16 14l3 3-3 3" />
+        </svg>
+      </div>
+      <span className={`${isLg ? 'text-2xl' : 'text-lg'} font-extrabold tracking-tight text-white`}>
+        Turn<span className="text-lime-400">Level</span>
+      </span>
+    </div>
+  )
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -442,34 +468,34 @@ export default function App() {
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center p-4">
+      <div className="min-h-screen bg-[#050505] text-white flex flex-col justify-center p-4">
         <div className="max-w-md w-full mx-auto space-y-6">
-          <div className="text-center">
-            <h1 className="text-3xl font-bold tracking-tight text-white">TurnLevel</h1>
-            <p className="text-xs text-slate-400 mt-1">Turnos flexíveis por proximidade</p>
+          <div className="text-center space-y-1.5">
+            <TurnLevelLogo size="lg" />
+            <p className="text-xs text-neutral-400">Turnos flexíveis por proximidade</p>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+          <div className="bg-[#111111] border border-neutral-800 rounded-3xl p-6 shadow-2xl">
             {authMode === 'login' ? (
               <form onSubmit={handleLogin} className="space-y-4">
-                <h2 className="text-lg font-semibold text-white">Entrar na conta</h2>
+                <h2 className="text-lg font-bold text-white">Entrar na conta</h2>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Email</label>
-                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
+                  <label className="block text-xs text-neutral-400 mb-1">Email</label>
+                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white transition" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Senha</label>
-                  <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
+                  <label className="block text-xs text-neutral-400 mb-1">Senha</label>
+                  <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white transition" />
                 </div>
 
-                {authError && <p className="text-xs text-red-400 bg-red-500/10 p-2.5 rounded-lg">{authError}</p>}
+                {authError && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-xl">{authError}</p>}
 
-                <button type="submit" disabled={authLoading} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-bold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.25)]">
                   {authLoading ? 'A entrar...' : 'Entrar'}
                 </button>
 
-                <button type="button" onClick={() => { setAuthMode('signup'); setSignupStep(1); setAuthError('') }} className="w-full text-center text-xs text-slate-400 hover:text-white pt-2">
-                  Não tem conta? <span className="text-emerald-400 font-medium">Criar cadastro</span>
+                <button type="button" onClick={() => { setAuthMode('signup'); setSignupStep(1); setAuthError('') }} className="w-full text-center text-xs text-neutral-400 hover:text-white pt-2">
+                  Não tem conta? <span className="text-lime-400 font-semibold">Criar cadastro</span>
                 </button>
               </form>
             ) : (
@@ -477,38 +503,38 @@ export default function App() {
                 <div className="flex items-center justify-between mb-6">
                   {[1, 2, 3].map((step) => (
                     <div key={step} className="flex items-center flex-1 last:flex-none">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${signupStep >= step ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold ${signupStep >= step ? 'bg-lime-400 text-black' : 'bg-neutral-800 text-neutral-400'}`}>
                         {step}
                       </div>
-                      {step < 3 && <div className={`h-0.5 flex-1 mx-2 ${signupStep > step ? 'bg-emerald-600' : 'bg-slate-800'}`} />}
+                      {step < 3 && <div className={`h-0.5 flex-1 mx-2 ${signupStep > step ? 'bg-lime-400' : 'bg-neutral-800'}`} />}
                     </div>
                   ))}
                 </div>
 
                 {signupStep === 1 && (
                   <form onSubmit={(e) => { e.preventDefault(); setSignupStep(2) }} className="space-y-4">
-                    <h2 className="text-lg font-semibold text-white">Etapa 1: Tipo de Conta</h2>
+                    <h2 className="text-lg font-bold text-white">Etapa 1: Tipo de Conta</h2>
                     <div className="grid grid-cols-2 gap-3">
-                      <button type="button" onClick={() => setRole('worker')} className={`p-3 rounded-xl border text-left ${role === 'worker' ? 'bg-emerald-500/10 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
-                        <div className="text-sm font-semibold">Trabalhador</div>
+                      <button type="button" onClick={() => setRole('worker')} className={`p-3.5 rounded-2xl border text-left transition ${role === 'worker' ? 'bg-lime-400/10 border-lime-400 text-white' : 'bg-[#050505] border-neutral-800 text-neutral-400'}`}>
+                        <div className="text-sm font-bold">Trabalhador</div>
                         <div className="text-[11px] opacity-75">Busco turnos</div>
                       </button>
-                      <button type="button" onClick={() => setRole('company')} className={`p-3 rounded-xl border text-left ${role === 'company' ? 'bg-emerald-500/10 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
-                        <div className="text-sm font-semibold">Empresa</div>
+                      <button type="button" onClick={() => setRole('company')} className={`p-3.5 rounded-2xl border text-left transition ${role === 'company' ? 'bg-lime-400/10 border-lime-400 text-white' : 'bg-[#050505] border-neutral-800 text-neutral-400'}`}>
+                        <div className="text-sm font-bold">Empresa</div>
                         <div className="text-[11px] opacity-75">Quero contratar</div>
                       </button>
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Email</label>
-                      <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">Email</label>
+                      <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Senha (mín. 6 dígitos)</label>
-                      <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">Senha (mín. 6 dígitos)</label>
+                      <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white" />
                     </div>
 
-                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                    <button type="submit" className="w-full bg-lime-400 hover:bg-lime-300 text-black font-bold text-sm py-3.5 rounded-xl transition">
                       Próxima Etapa →
                     </button>
                   </form>
@@ -516,107 +542,107 @@ export default function App() {
 
                 {signupStep === 2 && (
                   <form onSubmit={(e) => { e.preventDefault(); setSignupStep(3) }} className="space-y-3">
-                    <h2 className="text-lg font-semibold text-white">
+                    <h2 className="text-lg font-bold text-white">
                       {role === 'company' ? 'Etapa 2: Dados da Empresa' : 'Etapa 2: Seus Dados'}
                     </h2>
 
-                    <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800">
-                      {avatarPreview ? <img src={avatarPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover" /> : <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400">Foto</div>}
+                    <div className="flex items-center gap-3 bg-[#050505] p-3 rounded-xl border border-neutral-800">
+                      {avatarPreview ? <img src={avatarPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-lime-400" /> : <div className="w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center text-xs text-neutral-400">Foto</div>}
                       <div className="flex-1">
-                        <label className="block text-[11px] text-slate-300 mb-1">{role === 'company' ? 'Logo da Empresa' : 'Sua Foto de Perfil'}</label>
-                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-slate-400" />
+                        <label className="block text-[11px] text-neutral-300 mb-1">{role === 'company' ? 'Logo da Empresa' : 'Sua Foto de Perfil'}</label>
+                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-neutral-400" />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">{role === 'company' ? 'Nome da Empresa' : 'Nome Completo'}</label>
-                      <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">{role === 'company' ? 'Nome da Empresa' : 'Nome Completo'}</label>
+                      <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
 
                     {role === 'company' ? (
                       <>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">CNPJ</label>
-                          <input type="text" required placeholder="00.000.000/0001-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
+                          <input type="text" required placeholder="00.000.000/0001-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">Telefone / WhatsApp</label>
+                          <label className="block text-xs text-neutral-400 mb-1">Telefone / WhatsApp</label>
                           <div className="flex gap-2">
-                            <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
+                            <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                               {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
                             </select>
-                            <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                            <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">Conte sobre sua empresa</label>
-                          <textarea rows={3} required placeholder="Ramo de atuação, ambiente..." value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <label className="block text-xs text-neutral-400 mb-1">Conte sobre sua empresa</label>
+                          <textarea rows={3} required placeholder="Ramo de atuação, ambiente..." value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                       </>
                     ) : (
                       <>
                         <div className="grid grid-cols-3 gap-2">
                           <div className="col-span-2">
-                            <label className="block text-xs text-slate-400 mb-1">CPF</label>
-                            <input type="text" required placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                            <label className="block text-xs text-neutral-400 mb-1">CPF</label>
+                            <input type="text" required placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
                           <div>
-                            <label className="block text-xs text-slate-400 mb-1">Idade</label>
-                            <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
+                            <label className="block text-xs text-neutral-400 mb-1">Idade</label>
+                            <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                               {AGE_OPTIONS.map((num) => <option key={num} value={num}>{num} anos</option>)}
                             </select>
                           </div>
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">Telefone / WhatsApp</label>
+                          <label className="block text-xs text-neutral-400 mb-1">Telefone / WhatsApp</label>
                           <div className="flex gap-2">
-                            <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
+                            <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                               {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
                             </select>
-                            <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                            <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1.5">Habilidades</label>
+                          <label className="block text-xs text-neutral-400 mb-1.5">Habilidades</label>
                           <div className="flex flex-wrap gap-1.5 mb-2">
                             {SKILL_OPTIONS.map((skill) => {
                               const active = selectedSkills.includes(skill)
                               return (
-                                <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-medium' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
+                                <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-lime-400 border-lime-400 text-black font-bold' : 'bg-[#050505] border-neutral-800 text-neutral-400'}`}>
                                   {active ? '✓ ' : '+ '}{skill}
                                 </button>
                               )
                             })}
                           </div>
-                          <input type="text" placeholder="Outra habilidade..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                          <input type="text" placeholder="Outra habilidade..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2 text-xs text-white" />
                         </div>
                       </>
                     )}
 
                     <div className="flex gap-2 pt-2">
-                      <button type="button" onClick={() => setSignupStep(1)} className="w-1/3 bg-slate-800 text-slate-300 text-sm py-2.5 rounded-lg">← Voltar</button>
-                      <button type="submit" className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-2.5 rounded-lg">Próxima →</button>
+                      <button type="button" onClick={() => setSignupStep(1)} className="w-1/3 bg-neutral-800 text-neutral-300 text-sm py-3 rounded-xl">← Voltar</button>
+                      <button type="submit" className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-bold text-sm py-3 rounded-xl">Próxima →</button>
                     </div>
                   </form>
                 )}
 
                 {signupStep === 3 && (
                   <form onSubmit={handleCompleteSignup} className="space-y-3">
-                    <h2 className="text-lg font-semibold text-white">Etapa 3: Localização</h2>
+                    <h2 className="text-lg font-bold text-white">Etapa 3: Localização</h2>
                     <div className="grid grid-cols-2 gap-2">
-                      <input type="text" required placeholder="CEP" maxLength={9} value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
-                      <input type="text" required placeholder="UF" maxLength={2} value={stateUf} onChange={(e) => setStateUf(e.target.value.toUpperCase())} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="text" required placeholder="CEP" maxLength={9} value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      <input type="text" required placeholder="UF" maxLength={2} value={stateUf} onChange={(e) => setStateUf(e.target.value.toUpperCase())} className="bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <input type="text" required placeholder="Cidade" value={city} onChange={(e) => setCity(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
-                      <input type="text" required placeholder="Bairro" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <input type="text" required placeholder="Cidade" value={city} onChange={(e) => setCity(e.target.value)} className="bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      <input type="text" required placeholder="Bairro" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
-                    <input type="text" required placeholder="Rua / Número" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="text" required placeholder="Rua / Número" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
 
                     {role === 'worker' && (
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Distância máxima</label>
-                        <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
+                        <label className="block text-xs text-neutral-400 mb-1">Distância máxima</label>
+                        <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
                           <option value="Até 5 km (Mesmo bairro)">Até 5 km (Mesmo bairro)</option>
                           <option value="Até 10 km">Até 10 km</option>
                           <option value="Até 20 km">Até 20 km</option>
@@ -625,18 +651,18 @@ export default function App() {
                       </div>
                     )}
 
-                    {authError && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded">{authError}</p>}
+                    {authError && <p className="text-xs text-red-400 bg-red-500/10 p-2 rounded-xl">{authError}</p>}
 
                     <div className="flex gap-2 pt-2">
-                      <button type="button" onClick={() => setSignupStep(2)} className="w-1/3 bg-slate-800 text-slate-300 text-sm py-2.5 rounded-lg">← Voltar</button>
-                      <button type="submit" disabled={authLoading} className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-2.5 rounded-lg">
+                      <button type="button" onClick={() => setSignupStep(2)} className="w-1/3 bg-neutral-800 text-neutral-300 text-sm py-3 rounded-xl">← Voltar</button>
+                      <button type="submit" disabled={authLoading} className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-bold text-sm py-3 rounded-xl">
                         {authLoading ? 'A concluir...' : 'Concluir ✓'}
                       </button>
                     </div>
                   </form>
                 )}
 
-                <button type="button" onClick={() => setAuthMode('login')} className="w-full text-center text-xs text-slate-400 hover:text-white mt-4">
+                <button type="button" onClick={() => setAuthMode('login')} className="w-full text-center text-xs text-neutral-400 hover:text-white mt-4">
                   Já possui conta? Voltar ao login
                 </button>
               </div>
@@ -648,54 +674,60 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-24">
-      <header className="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-10 px-4 py-3">
+    <div className="min-h-screen bg-[#050505] text-white pb-24">
+      {/* CABEÇALHO MINIMALISTA PRETO + LOGO LIMA */}
+      <header className="bg-[#050505]/90 backdrop-blur-md border-b border-neutral-900 sticky top-0 z-10 px-4 py-3.5">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <TurnLevelLogo size="md" />
+
           <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-bold text-white leading-tight">{profile?.full_name || fullName}</p>
+              <p className="text-[11px] text-lime-400 font-medium">
+                {profile?.city || city || 'Sem cidade'} • {(profile?.role || role) === 'company' ? 'Empresa' : 'Trabalhador'}
+              </p>
+            </div>
             {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="Avatar" className="w-9 h-9 rounded-full object-cover border border-slate-700" />
+              <img src={profile.avatar_url} alt="Avatar" className="w-9 h-9 rounded-full object-cover border-2 border-lime-400" />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-emerald-600/20 text-emerald-400 flex items-center justify-center font-bold text-sm">
+              <div className="w-9 h-9 rounded-full bg-neutral-900 border border-lime-400/50 text-lime-400 flex items-center justify-center font-extrabold text-xs">
                 {(profile?.full_name || fullName || 'T')[0].toUpperCase()}
               </div>
             )}
-            <div>
-              <h1 className="text-base font-bold text-white leading-tight">TurnLevel</h1>
-              <p className="text-[11px] text-slate-400">
-                {profile?.full_name || fullName} • {profile?.city || city || 'Sem cidade'} ({(profile?.role || role) === 'company' ? 'Empresa' : 'Trabalhador'})
-              </p>
-            </div>
+            <button onClick={() => supabase.auth.signOut()} className="text-xs bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 px-3 py-1.5 rounded-xl transition">
+              Sair
+            </button>
           </div>
-          <button onClick={() => supabase.auth.signOut()} className="text-xs bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 px-3 py-1.5 rounded-lg transition">
-            Sair
-          </button>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto p-4 space-y-6">
         {loadingProfile ? (
-          <p className="text-sm text-slate-400 text-center py-10">A carregar dados...</p>
+          <p className="text-sm text-neutral-400 text-center py-10">A carregar dados...</p>
         ) : (
           <>
             {activeTab === 'shifts' && (
               <div className="space-y-6">
                 {(profile?.role || role) === 'company' && (
-                  <section className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                    <h2 className="text-base font-semibold text-white mb-4">Publicar Novo Turno</h2>
+                  <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-base font-bold text-white">Publicar Novo Turno</h2>
+                      <span className="text-[11px] bg-lime-400/10 text-lime-400 border border-lime-400/30 px-2.5 py-0.5 rounded-full font-semibold">Vaga Rápida</span>
+                    </div>
                     <form onSubmit={handleCreateShift} className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Função / Cargo</label>
-                        <input type="text" required placeholder="Ex: Garçom" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">Função / Cargo</label>
+                        <input type="text" required placeholder="Ex: Garçom" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Vagas</label>
-                        <select value={vacancies} onChange={(e) => setVacancies(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
+                        <label className="block text-xs text-neutral-400 mb-1">Vagas</label>
+                        <select value={vacancies} onChange={(e) => setVacancies(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
                           {[1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map((v) => <option key={v} value={v}>{v} vagas</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Carga Horária</label>
-                        <select value={workload} onChange={(e) => setWorkload(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
+                        <label className="block text-xs text-neutral-400 mb-1">Carga Horária</label>
+                        <select value={workload} onChange={(e) => setWorkload(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
                           <option value="4 horas">4 horas</option>
                           <option value="6 horas">6 horas</option>
                           <option value="8 horas">8 horas</option>
@@ -704,70 +736,88 @@ export default function App() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Horário</label>
-                        <input type="text" required placeholder="18:00 às 00:00" value={shiftHours} onChange={(e) => setShiftHours(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">Horário</label>
+                        <input type="text" required placeholder="18:00 às 00:00" value={shiftHours} onChange={(e) => setShiftHours(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Valor (R$)</label>
-                        <input type="number" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">Valor (R$)</label>
+                        <input type="number" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Data</label>
-                        <input type="datetime-local" required value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">Data</label>
+                        <input type="datetime-local" required value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Transporte</label>
-                        <select value={transportInfo} onChange={(e) => setTransportInfo(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
+                        <label className="block text-xs text-neutral-400 mb-1">Transporte</label>
+                        <select value={transportInfo} onChange={(e) => setTransportInfo(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
                           <option value="Vale-transporte pago">Vale-transporte pago</option>
                           <option value="Ajuda de custo transporte">Ajuda de custo transporte</option>
                           <option value="Não fornece transporte">Não fornece transporte</option>
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Alimentação</label>
-                        <select value={mealInfo} onChange={(e) => setMealInfo(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
+                        <label className="block text-xs text-neutral-400 mb-1">Alimentação</label>
+                        <select value={mealInfo} onChange={(e) => setMealInfo(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
                           <option value="Alimentação no local">Alimentação no local</option>
                           <option value="Vale-refeição pago">Vale-refeição pago</option>
                           <option value="Não fornece alimentação">Não fornece alimentação</option>
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Bairro / Setor</label>
-                        <input type="text" required placeholder="Setor Bueno" value={shiftNeighborhood} onChange={(e) => setShiftNeighborhood(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">Bairro / Setor</label>
+                        <input type="text" required placeholder="Setor Bueno" value={shiftNeighborhood} onChange={(e) => setShiftNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Rua e Número</label>
-                        <input type="text" required placeholder="Rua T-30, nº 120" value={shiftStreet} onChange={(e) => setShiftStreet(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">Rua e Número</label>
+                        <input type="text" required placeholder="Rua T-30, nº 120" value={shiftStreet} onChange={(e) => setShiftStreet(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div className="sm:col-span-2">
-                        <label className="block text-xs text-slate-400 mb-1">Exigências / Observações</label>
-                        <input type="text" placeholder="Calça preta, sapato fechado..." value={requirements} onChange={(e) => setRequirements(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">Exigências / Observações</label>
+                        <input type="text" placeholder="Calça preta, sapato fechado..." value={requirements} onChange={(e) => setRequirements(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
-                      <button type="submit" className="sm:col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                      <button type="submit" className="sm:col-span-2 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
                         + Publicar Vaga Agora
                       </button>
                     </form>
                   </section>
                 )}
 
-                <section className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2 items-center justify-between">
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-[11px] text-slate-400 mb-1">Filtrar por cidade ou bairro</label>
-                    <input type="text" value={cityFilter} onChange={(e) => setCityFilter(e.target.value)} placeholder="Ex: Goiânia..." className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-white" />
+                {/* BARRA DE FILTRO MINIMALISTA */}
+                <section className="bg-[#111111] border border-neutral-800 rounded-2xl p-3.5 flex flex-wrap gap-2 items-center justify-between">
+                  <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2">
+                    <span className="text-lime-400 text-xs">📍</span>
+                    <input
+                      type="text"
+                      value={cityFilter}
+                      onChange={(e) => setCityFilter(e.target.value)}
+                      placeholder="Filtrar por cidade ou bairro..."
+                      className="w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-500"
+                    />
                   </div>
-                  <div className="flex gap-2 pt-4">
-                    <button onClick={() => fetchShifts(cityFilter)} className="bg-emerald-600 text-white text-xs font-medium px-3 py-2 rounded-lg">Filtrar</button>
-                    <button onClick={() => { setCityFilter(''); fetchShifts('') }} className="bg-slate-800 text-slate-300 text-xs px-3 py-2 rounded-lg">Ver Todas</button>
+                  <div className="flex gap-2">
+                    <button onClick={() => fetchShifts(cityFilter)} className="bg-lime-400 hover:bg-lime-300 text-black text-xs font-bold px-4 py-2.5 rounded-xl transition">
+                      Filtrar
+                    </button>
+                    <button onClick={() => { setCityFilter(''); fetchShifts('') }} className="bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-medium px-3 py-2.5 rounded-xl border border-neutral-800 transition">
+                      Todas
+                    </button>
                   </div>
                 </section>
 
-                <section className="space-y-3">
-                  <h2 className="text-base font-semibold text-white">Turnos Disponíveis ({shifts.length})</h2>
+                {/* CARTÕES BRANCOS DE ALTO CONTRASTE (30% BRANCO) */}
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-white">Turnos Disponíveis</h2>
+                    <span className="text-xs font-bold bg-neutral-900 text-lime-400 border border-neutral-800 px-2.5 py-1 rounded-full">
+                      {shifts.length} {shifts.length === 1 ? 'vaga' : 'vagas'}
+                    </span>
+                  </div>
+
                   {loadingShifts ? (
-                    <p className="text-sm text-slate-400">A procurar turnos...</p>
+                    <p className="text-sm text-neutral-400">A procurar turnos...</p>
                   ) : shifts.length === 0 ? (
-                    <div className="bg-slate-900 border border-dashed border-slate-800 rounded-xl p-8 text-center">
-                      <p className="text-sm text-slate-400">Nenhum turno encontrado.</p>
+                    <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
+                      <p className="text-sm text-neutral-400">Nenhum turno encontrado nesta região.</p>
                     </div>
                   ) : (
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -777,44 +827,65 @@ export default function App() {
                           <div
                             key={shift.id}
                             onClick={() => setSelectedShiftModal(shift)}
-                            className="bg-slate-900 hover:border-slate-700 cursor-pointer border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-4 transition"
+                            className="bg-white text-black hover:scale-[1.01] cursor-pointer rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition-all"
                           >
                             <div>
-                              <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-800/70">
-                                <div className="flex items-center gap-2.5">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                                  Turno
+                                </span>
+                                <span className="text-[11px] font-bold bg-black text-lime-400 px-2.5 py-0.5 rounded-full">
+                                  {shift.workload || '6 horas'}
+                                </span>
+                              </div>
+
+                              <h3 className="font-extrabold text-black text-xl leading-tight">{shift.title}</h3>
+
+                              <div className="mt-1.5 flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-[#4d7c0f] tracking-tight">
+                                  R$ {Number(shift.pay_rate).toFixed(2).replace('.', ',')}
+                                </span>
+                                <span className="text-xs font-semibold text-neutral-500">/ turno</span>
+                              </div>
+
+                              <div className="mt-4 pt-3 border-t border-neutral-200 space-y-1.5">
+                                <div className="flex items-center gap-2">
                                   {shift.company?.avatar_url ? (
-                                    <img src={shift.company.avatar_url} alt="Logo" className="w-8 h-8 rounded-full object-cover" />
+                                    <img src={shift.company.avatar_url} alt="Logo" className="w-6 h-6 rounded-full object-cover border border-neutral-300" />
                                   ) : (
-                                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-300">
+                                    <div className="w-6 h-6 rounded-full bg-black text-lime-400 flex items-center justify-center text-[10px] font-bold">
                                       {(shift.company?.full_name || 'E')[0]}
                                     </div>
                                   )}
-                                  <div>
-                                    <p className="text-xs font-semibold text-slate-200">{shift.company?.full_name || 'Empresa'}</p>
-                                    <p className="text-[11px] text-emerald-400">Toque para ver detalhes da empresa e vaga</p>
-                                  </div>
+                                  <p className="text-xs font-bold text-neutral-800">{shift.company?.full_name || 'Empresa'}</p>
                                 </div>
+                                <p className="text-xs text-neutral-600 font-medium">📍 {shift.location}</p>
+                                <p className="text-xs text-neutral-500">📅 {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}</p>
                               </div>
-
-                              <h3 className="font-semibold text-white text-base">{shift.title}</h3>
-                              <p className="text-xs text-slate-300 mt-2">📍 {shift.location}</p>
-                              <p className="text-xs text-slate-400 mt-1">📅 {new Date(shift.shift_date).toLocaleDateString('pt-BR')}</p>
                             </div>
 
-                            <div className="pt-3 border-t border-slate-800 flex justify-between items-center" onClick={(e) => e.stopPropagation()}>
-                              <span className="text-emerald-400 font-bold text-base">R$ {Number(shift.pay_rate).toFixed(2)}</span>
+                            <div className="pt-1" onClick={(e) => e.stopPropagation()}>
                               {(profile?.role || role) === 'worker' ? (
                                 shift.status !== 'open' ? (
-                                  <span className="text-xs bg-slate-800 text-slate-400 px-3 py-1.5 rounded-lg">Preenchido</span>
+                                  <div className="w-full text-center text-xs font-bold bg-neutral-200 text-neutral-600 py-3 rounded-2xl">
+                                    Vaga Preenchida
+                                  </div>
                                 ) : applied ? (
-                                  <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg">Candidatado ✓</span>
+                                  <div className="w-full text-center text-xs font-extrabold bg-black text-lime-400 py-3 rounded-2xl">
+                                    Candidatura Enviada ✓
+                                  </div>
                                 ) : (
-                                  <button onClick={() => setSelectedShiftModal(shift)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium px-4 py-2 rounded-lg transition">
-                                    Ver Vaga
+                                  <button
+                                    onClick={() => setSelectedShiftModal(shift)}
+                                    className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-sm"
+                                  >
+                                    Ver Vaga e Candidatar
                                   </button>
                                 )
                               ) : (
-                                <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded">{shift.status === 'open' ? 'Aberto' : 'Preenchido'}</span>
+                                <div className="w-full text-center text-xs font-bold bg-black text-white py-2.5 rounded-2xl">
+                                  Status: {shift.status === 'open' ? 'Aberto' : 'Preenchido'}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -828,15 +899,15 @@ export default function App() {
 
             {activeTab === 'applications' && (
               <section className="space-y-4">
-                <h2 className="text-lg font-semibold text-white">
+                <h2 className="text-lg font-bold text-white">
                   {(profile?.role || role) === 'company' ? 'Candidatos Recebidos' : 'Minhas Candidaturas'}
                 </h2>
                 {applications.length === 0 ? (
-                  <div className="bg-slate-900 border border-dashed border-slate-800 rounded-xl p-8 text-center">
-                    <p className="text-sm text-slate-400">Sem registos no momento.</p>
+                  <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
+                    <p className="text-sm text-neutral-400">Sem registos no momento.</p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {applications.map((app) => {
                       const isAccepted = app.status === 'accepted'
                       const companyPhone = app.shift?.company?.phone_ddd && app.shift?.company?.phone ? `55${app.shift.company.phone_ddd}${app.shift.company.phone.replace(/\D/g, '')}` : ''
@@ -850,28 +921,37 @@ export default function App() {
                               setSelectedWorkerModal(app)
                             }
                           }}
-                          className={`bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 ${(profile?.role || role) === 'company' ? 'cursor-pointer hover:border-slate-700' : ''}`}
+                          className={`bg-white text-black rounded-3xl p-5 space-y-3 shadow-lg ${(profile?.role || role) === 'company' ? 'cursor-pointer hover:scale-[1.01] transition' : ''}`}
                         >
-                          <div className="flex justify-between items-start">
+                          <div className="flex justify-between items-start gap-2">
                             <div>
-                              <span className="text-xs text-emerald-400 font-medium">Turno: {app.shift?.title} (R$ {Number(app.shift?.pay_rate || 0).toFixed(2)})</span>
+                              <span className="text-xs font-extrabold text-[#4d7c0f] uppercase tracking-wide">
+                                {app.shift?.title} • R$ {Number(app.shift?.pay_rate || 0).toFixed(2).replace('.', ',')}
+                              </span>
                               {(profile?.role || role) === 'company' ? (
-                                <div className="flex items-center gap-3 mt-2">
-                                  {app.worker?.avatar_url ? <img src={app.worker.avatar_url} alt="Foto" className="w-11 h-11 rounded-full object-cover" /> : <div className="w-11 h-11 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold">{(app.worker?.full_name || 'T')[0]}</div>}
+                                <div className="flex items-center gap-3 mt-2.5">
+                                  {app.worker?.avatar_url ? (
+                                    <img src={app.worker.avatar_url} alt="Foto" className="w-12 h-12 rounded-full object-cover border-2 border-black" />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-full bg-black text-lime-400 flex items-center justify-center text-sm font-extrabold">
+                                      {(app.worker?.full_name || 'T')[0]}
+                                    </div>
+                                  )}
                                   <div>
-                                    <h3 className="font-semibold text-white text-sm">{app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}</h3>
-                                    <p className="text-xs text-slate-400">📍 {app.worker?.neighborhood}, {app.worker?.city}</p>
-                                    <p className="text-[11px] text-emerald-400 mt-0.5">Toque para inspecionar perfil completo do candidato</p>
+                                    <h3 className="font-extrabold text-black text-base">{app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}</h3>
+                                    <p className="text-xs text-neutral-600 font-medium">📍 {app.worker?.neighborhood}, {app.worker?.city}</p>
+                                    <p className="text-[11px] text-neutral-500 underline mt-0.5">Toque para ver ficha completa</p>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="mt-1">
-                                  <h3 className="font-semibold text-white text-sm">{app.shift?.company?.full_name}</h3>
-                                  <p className="text-xs text-slate-400">📍 {app.shift?.location}</p>
+                                <div className="mt-1.5">
+                                  <h3 className="font-extrabold text-black text-base">{app.shift?.company?.full_name}</h3>
+                                  <p className="text-xs text-neutral-600 font-medium">📍 {app.shift?.location}</p>
                                 </div>
                               )}
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${isAccepted ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : app.status === 'rejected' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+
+                            <span className={`text-xs px-3 py-1 rounded-full font-extrabold shrink-0 ${isAccepted ? 'bg-black text-lime-400' : app.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-neutral-200 text-neutral-800'}`}>
                               {isAccepted ? 'Aceito ✓' : app.status === 'rejected' ? 'Recusado' : 'Pendente'}
                             </span>
                           </div>
@@ -884,7 +964,7 @@ export default function App() {
                                   href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20o%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel!%20Vamos%20alinhar%20os%20detalhes?`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2.5 rounded-lg transition"
+                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3.5 rounded-2xl transition shadow-sm"
                                 >
                                   💬 Chamar Trabalhador no WhatsApp
                                 </a>
@@ -893,7 +973,7 @@ export default function App() {
                                   href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20no%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel!`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2.5 rounded-lg transition"
+                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3.5 rounded-2xl transition shadow-sm"
                                 >
                                   💬 Falar com a Empresa no WhatsApp
                                 </a>
@@ -902,9 +982,13 @@ export default function App() {
                           )}
 
                           {(profile?.role || role) === 'company' && app.status === 'pending' && (
-                            <div className="flex gap-2 pt-2 border-t border-slate-800" onClick={(e) => e.stopPropagation()}>
-                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'accepted')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2 rounded-lg">Aceitar</button>
-                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'rejected')} className="flex-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium py-2 rounded-lg">Recusar</button>
+                            <div className="flex gap-2 pt-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
+                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'accepted')} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl">
+                                Aceitar ✓
+                              </button>
+                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'rejected')} className="flex-1 bg-neutral-200 hover:bg-red-100 hover:text-red-700 text-neutral-700 text-xs font-bold py-3 rounded-2xl">
+                                Recusar
+                              </button>
                             </div>
                           )}
                         </div>
@@ -916,61 +1000,61 @@ export default function App() {
             )}
 
             {activeTab === 'profile' && (
-              <section className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                <h2 className="text-lg font-semibold text-white mb-4">Meus Dados Cadastrais</h2>
+              <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5">
+                <h2 className="text-lg font-bold text-white mb-4">Meus Dados Cadastrais</h2>
                 <form onSubmit={handleUpdateProfile} className="space-y-4">
-                  <div className="flex items-center gap-4 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                    {avatarPreview ? <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover" /> : <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-sm text-slate-400">Foto</div>}
+                  <div className="flex items-center gap-4 bg-[#050505] p-3.5 rounded-2xl border border-neutral-800">
+                    {avatarPreview ? <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-lime-400" /> : <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center text-sm text-neutral-400">Foto</div>}
                     <div>
-                      <label className="block text-xs text-slate-300 font-medium mb-1">Alterar Foto / Logo</label>
-                      <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-slate-400" />
+                      <label className="block text-xs text-neutral-300 font-semibold mb-1">Alterar Foto / Logo</label>
+                      <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-neutral-400" />
                     </div>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Nome</label>
-                      <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">Nome</label>
+                      <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Telefone</label>
+                      <label className="block text-xs text-neutral-400 mb-1">Telefone</label>
                       <div className="flex gap-2">
-                        <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
+                        <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                           {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
                         </select>
-                        <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                        <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                     </div>
                     {(profile?.role || role) === 'company' ? (
                       <>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">CNPJ</label>
-                          <input type="text" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
+                          <input type="text" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">Setor</label>
-                          <input type="text" value={sector} onChange={(e) => setSector(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <label className="block text-xs text-neutral-400 mb-1">Setor</label>
+                          <input type="text" value={sector} onChange={(e) => setSector(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="block text-xs text-slate-400 mb-1">Sobre a empresa</label>
-                          <textarea rows={2} value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <label className="block text-xs text-neutral-400 mb-1">Sobre a empresa</label>
+                          <textarea rows={2} value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                       </>
                     ) : (
                       <>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">CPF</label>
-                          <input type="text" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                          <label className="block text-xs text-neutral-400 mb-1">CPF</label>
+                          <input type="text" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                         <div>
-                          <label className="block text-xs text-slate-400 mb-1">Idade</label>
-                          <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-sm text-white">
+                          <label className="block text-xs text-neutral-400 mb-1">Idade</label>
+                          <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                             {AGE_OPTIONS.map((num) => <option key={num} value={num}>{num} anos</option>)}
                           </select>
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="block text-xs text-slate-400 mb-1">Distância máxima</label>
-                          <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white">
+                          <label className="block text-xs text-neutral-400 mb-1">Distância máxima</label>
+                          <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
                             <option value="Até 5 km (Mesmo bairro)">Até 5 km (Mesmo bairro)</option>
                             <option value="Até 10 km">Até 10 km</option>
                             <option value="Até 20 km">Até 20 km</option>
@@ -978,45 +1062,45 @@ export default function App() {
                           </select>
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="block text-xs text-slate-400 mb-1.5">Habilidades</label>
+                          <label className="block text-xs text-neutral-400 mb-1.5">Habilidades</label>
                           <div className="flex flex-wrap gap-1.5 mb-2">
                             {SKILL_OPTIONS.map((skill) => {
                               const active = selectedSkills.includes(skill)
                               return (
-                                <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-medium' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
+                                <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-lime-400 border-lime-400 text-black font-bold' : 'bg-[#050505] border-neutral-800 text-neutral-400'}`}>
                                   {active ? '✓ ' : '+ '}{skill}
                                 </button>
                               )
                             })}
                           </div>
-                          <input type="text" placeholder="Outras..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                          <input type="text" placeholder="Outras..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2 text-xs text-white" />
                         </div>
                       </>
                     )}
 
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">CEP</label>
-                      <input type="text" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">CEP</label>
+                      <input type="text" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Estado (UF)</label>
-                      <input type="text" value={stateUf} onChange={(e) => setStateUf(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">Estado (UF)</label>
+                      <input type="text" value={stateUf} onChange={(e) => setStateUf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Cidade</label>
-                      <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">Cidade</label>
+                      <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Bairro</label>
-                      <input type="text" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">Bairro</label>
+                      <input type="text" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="block text-xs text-slate-400 mb-1">Endereço</label>
-                      <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white" />
+                      <label className="block text-xs text-neutral-400 mb-1">Endereço</label>
+                      <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     </div>
                   </div>
 
-                  <button type="submit" disabled={authLoading} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                  <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition">
                     {authLoading ? 'A guardar...' : 'Salvar Alterações'}
                   </button>
                 </form>
@@ -1026,75 +1110,75 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL: DETALHES DO TURNO E PERFIL DA EMPRESA */}
+      {/* MODAL BRANCO: DETALHES DO TURNO E PERFIL DA EMPRESA */}
       {selectedShiftModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
+          <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
                 {selectedShiftModal.company?.avatar_url ? (
-                  <img src={selectedShiftModal.company.avatar_url} alt="Empresa" className="w-12 h-12 rounded-full object-cover border border-slate-700" />
+                  <img src={selectedShiftModal.company.avatar_url} alt="Empresa" className="w-12 h-12 rounded-full object-cover border-2 border-black" />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center font-bold text-white">
+                  <div className="w-12 h-12 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold">
                     {(selectedShiftModal.company?.full_name || 'E')[0]}
                   </div>
                 )}
                 <div>
-                  <h3 className="font-bold text-white text-base">{selectedShiftModal.company?.full_name || 'Empresa'}</h3>
-                  <p className="text-xs text-slate-400">CNPJ: {selectedShiftModal.company?.cnpj || 'Não informado'}</p>
-                  <p className="text-xs text-emerald-400">📍 {selectedShiftModal.company?.city} - {selectedShiftModal.company?.state}</p>
+                  <h3 className="font-extrabold text-black text-base">{selectedShiftModal.company?.full_name || 'Empresa'}</h3>
+                  <p className="text-xs text-neutral-500">CNPJ: {selectedShiftModal.company?.cnpj || 'Não informado'}</p>
+                  <p className="text-xs font-bold text-[#4d7c0f]">📍 {selectedShiftModal.company?.city} - {selectedShiftModal.company?.state}</p>
                 </div>
               </div>
-              <button onClick={() => setSelectedShiftModal(null)} className="text-slate-400 hover:text-white text-lg px-2">✕</button>
+              <button onClick={() => setSelectedShiftModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
             </div>
 
             {selectedShiftModal.company?.bio && (
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <p className="text-[11px] text-slate-400 font-medium mb-1">Sobre a empresa:</p>
-                <p className="text-xs text-slate-200">{selectedShiftModal.company.bio}</p>
+              <div className="bg-neutral-100 p-3.5 rounded-2xl">
+                <p className="text-[11px] text-neutral-500 font-bold uppercase mb-1">Sobre a empresa</p>
+                <p className="text-xs text-neutral-800">{selectedShiftModal.company.bio}</p>
               </div>
             )}
 
-            <div className="space-y-2 border-t border-slate-800 pt-3">
+            <div className="space-y-3 border-t border-neutral-200 pt-3">
               <div className="flex justify-between items-center">
-                <h4 className="font-bold text-white text-lg">{selectedShiftModal.title}</h4>
-                <span className="text-emerald-400 font-bold text-lg">R$ {Number(selectedShiftModal.pay_rate).toFixed(2)}</span>
+                <h4 className="font-extrabold text-black text-lg">{selectedShiftModal.title}</h4>
+                <span className="text-[#4d7c0f] font-black text-xl">R$ {Number(selectedShiftModal.pay_rate).toFixed(2).replace('.', ',')}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <span className="text-slate-400 block">Vagas:</span>
-                  <span className="text-white font-medium">{selectedShiftModal.vacancies || 1}</span>
+                <div className="bg-neutral-100 p-3 rounded-2xl">
+                  <span className="text-neutral-500 block">Vagas</span>
+                  <span className="text-black font-bold">{selectedShiftModal.vacancies || 1}</span>
                 </div>
-                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <span className="text-slate-400 block">Carga Horária:</span>
-                  <span className="text-white font-medium">{selectedShiftModal.workload || 'A combinar'}</span>
+                <div className="bg-neutral-100 p-3 rounded-2xl">
+                  <span className="text-neutral-500 block">Carga Horária</span>
+                  <span className="text-black font-bold">{selectedShiftModal.workload || 'A combinar'}</span>
                 </div>
-                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <span className="text-slate-400 block">Transporte:</span>
-                  <span className="text-white font-medium">{selectedShiftModal.transport_info || 'Não informado'}</span>
+                <div className="bg-neutral-100 p-3 rounded-2xl">
+                  <span className="text-neutral-500 block">Transporte</span>
+                  <span className="text-black font-bold">{selectedShiftModal.transport_info || 'Não informado'}</span>
                 </div>
-                <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                  <span className="text-slate-400 block">Alimentação:</span>
-                  <span className="text-white font-medium">{selectedShiftModal.meal_info || 'Não informado'}</span>
+                <div className="bg-neutral-100 p-3 rounded-2xl">
+                  <span className="text-neutral-500 block">Alimentação</span>
+                  <span className="text-black font-bold">{selectedShiftModal.meal_info || 'Não informado'}</span>
                 </div>
               </div>
 
-              <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
-                <p className="text-slate-300">📅 <strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
-                <p className="text-slate-300">📍 <strong>Local do Turno:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
-                {selectedShiftModal.requirements && <p className="text-slate-300 pt-1">📋 <strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
+              <div className="bg-neutral-100 p-3.5 rounded-2xl text-xs space-y-1.5">
+                <p className="text-neutral-800">📅 <strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
+                <p className="text-neutral-800">📍 <strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
+                {selectedShiftModal.requirements && <p className="text-neutral-800 pt-1">📋 <strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
               </div>
             </div>
 
             {(profile?.role || role) === 'worker' && selectedShiftModal.status === 'open' && (
               <div className="pt-2">
                 {applications.some((a) => a.shift_id === selectedShiftModal.id) ? (
-                  <div className="w-full text-center py-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-medium">
+                  <div className="w-full text-center py-3.5 rounded-2xl bg-black text-lime-400 text-xs font-extrabold">
                     Você já se candidatou a este turno ✓
                   </div>
                 ) : (
-                  <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                  <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-md">
                     Confirmar Candidatura
                   </button>
                 )}
@@ -1104,43 +1188,43 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: PERFIL COMPLETO DO CANDIDATO */}
+      {/* MODAL BRANCO: PERFIL COMPLETO DO CANDIDATO */}
       {selectedWorkerModal && selectedWorkerModal.worker && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
+          <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
                 {selectedWorkerModal.worker.avatar_url ? (
-                  <img src={selectedWorkerModal.worker.avatar_url} alt="Candidato" className="w-14 h-14 rounded-full object-cover border border-slate-700" />
+                  <img src={selectedWorkerModal.worker.avatar_url} alt="Candidato" className="w-14 h-14 rounded-full object-cover border-2 border-black" />
                 ) : (
-                  <div className="w-14 h-14 rounded-full bg-slate-800 flex items-center justify-center font-bold text-white text-lg">
+                  <div className="w-14 h-14 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold text-lg">
                     {(selectedWorkerModal.worker.full_name || 'T')[0]}
                   </div>
                 )}
                 <div>
-                  <h3 className="font-bold text-white text-base">{selectedWorkerModal.worker.full_name}</h3>
-                  <p className="text-xs text-slate-400">
+                  <h3 className="font-extrabold text-black text-base">{selectedWorkerModal.worker.full_name}</h3>
+                  <p className="text-xs text-neutral-600 font-medium">
                     {selectedWorkerModal.worker.age ? `${selectedWorkerModal.worker.age} anos` : ''} • {selectedWorkerModal.worker.city}/{selectedWorkerModal.worker.state}
                   </p>
-                  <p className="text-xs text-emerald-400">CPF: {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
+                  <p className="text-xs font-bold text-[#4d7c0f]">CPF: {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
                 </div>
               </div>
-              <button onClick={() => setSelectedWorkerModal(null)} className="text-slate-400 hover:text-white text-lg px-2">✕</button>
+              <button onClick={() => setSelectedWorkerModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
             </div>
 
-            <div className="space-y-2 text-xs bg-slate-950 p-3.5 rounded-xl border border-slate-800">
-              <p className="text-slate-300">📞 <strong>WhatsApp / Telefone:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
-              <p className="text-slate-300">📍 <strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
-              <p className="text-slate-300">🚗 <strong>Raio de Deslocamento:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
-              <p className="text-slate-300">🛠 <strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
+            <div className="space-y-2 text-xs bg-neutral-100 p-4 rounded-2xl">
+              <p className="text-neutral-800">📞 <strong>WhatsApp / Telefone:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
+              <p className="text-neutral-800">📍 <strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
+              <p className="text-neutral-800">🚗 <strong>Raio de Deslocamento:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
+              <p className="text-neutral-800">🛠 <strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
             </div>
 
             {selectedWorkerModal.status === 'pending' && (
               <div className="flex gap-2 pt-2">
-                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'accepted')} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm py-3 rounded-lg">
+                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'accepted')} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl">
                   Aceitar Candidato ✓
                 </button>
-                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'rejected')} className="flex-1 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium py-3 rounded-lg">
+                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'rejected')} className="flex-1 bg-neutral-200 hover:bg-red-100 hover:text-red-700 text-neutral-700 text-xs font-bold py-3.5 rounded-2xl">
                   Recusar
                 </button>
               </div>
@@ -1149,15 +1233,25 @@ export default function App() {
         </div>
       )}
 
-      <nav className="fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 px-4 py-2 z-20">
+      {/* BARRA DE NAVEGAÇÃO INFERIOR PRETO + LIMA */}
+      <nav className="fixed bottom-0 inset-x-0 bg-[#050505]/95 backdrop-blur-md border-t border-neutral-900 px-4 py-2.5 z-20">
         <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
-          <button onClick={() => setActiveTab('shifts')} className={`py-2 rounded-lg text-xs font-medium transition ${activeTab === 'shifts' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
+          <button
+            onClick={() => setActiveTab('shifts')}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'shifts' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
             Turnos
           </button>
-          <button onClick={() => { setActiveTab('applications'); fetchApplications(profile) }} className={`py-2 rounded-lg text-xs font-medium transition ${activeTab === 'applications' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
+          <button
+            onClick={() => { setActiveTab('applications'); fetchApplications(profile) }}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'applications' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
             {(profile?.role || role) === 'company' ? 'Candidatos' : 'Candidaturas'}
           </button>
-          <button onClick={() => setActiveTab('profile')} className={`py-2 rounded-lg text-xs font-medium transition ${activeTab === 'profile' ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'}`}>
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'profile' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
             Perfil
           </button>
         </div>
