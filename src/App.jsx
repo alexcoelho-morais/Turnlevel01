@@ -546,11 +546,25 @@ export default function App() {
                       {role === 'company' ? 'Etapa 2: Dados da Empresa' : 'Etapa 2: Seus Dados'}
                     </h2>
 
-                    <div className="flex items-center gap-3 bg-[#050505] p-3 rounded-xl border border-neutral-800">
-                      {avatarPreview ? <img src={avatarPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-lime-400" /> : <div className="w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center text-xs text-neutral-400">Foto</div>}
+                    <div className="flex items-center gap-4 bg-[#050505] p-4 rounded-2xl border border-neutral-800">
+                      <div className="relative group cursor-pointer">
+                        {avatarPreview ? (
+                          <img src={avatarPreview} alt="Preview" className="w-14 h-14 rounded-full object-cover border-2 border-lime-400" />
+                        ) : (
+                          <div className="w-14 h-14 rounded-full bg-neutral-800 flex items-center justify-center text-xs text-neutral-400 border border-neutral-700">Foto</div>
+                        )}
+                        <label className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-[10px] text-lime-400 font-bold">
+                          Alterar
+                          <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                        </label>
+                      </div>
                       <div className="flex-1">
-                        <label className="block text-[11px] text-neutral-300 mb-1">{role === 'company' ? 'Logo da Empresa' : 'Sua Foto de Perfil'}</label>
-                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-neutral-400" />
+                        <p className="text-xs text-white font-semibold">{role === 'company' ? 'Logo da Empresa' : 'Sua Foto de Perfil'}</p>
+                        <label className="inline-block mt-1 text-xs text-lime-400 font-bold cursor-pointer hover:underline">
+                          Selecionar imagem...
+                          <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                        </label>
+                        {avatarFile && <p className="text-[10px] text-neutral-400 mt-0.5 truncate max-w-[180px]">✓ {avatarFile.name}</p>}
                       </div>
                     </div>
 
@@ -1000,14 +1014,33 @@ export default function App() {
             )}
 
             {activeTab === 'profile' && (
-              <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5">
-                <h2 className="text-lg font-bold text-white mb-4">Meus Dados Cadastrais</h2>
+              <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-5">
+                <h2 className="text-lg font-bold text-white">Meus Dados Cadastrais</h2>
                 <form onSubmit={handleUpdateProfile} className="space-y-4">
-                  <div className="flex items-center gap-4 bg-[#050505] p-3.5 rounded-2xl border border-neutral-800">
-                    {avatarPreview ? <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-lime-400" /> : <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center text-sm text-neutral-400">Foto</div>}
-                    <div>
-                      <label className="block text-xs text-neutral-300 font-semibold mb-1">Alterar Foto / Logo</label>
-                      <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="text-xs text-neutral-400" />
+                  {/* UPLOAD DE FOTO PROFISSIONAL SEM O TEXTO NATIVO FEIO */}
+                  <div className="flex items-center gap-4 bg-[#050505] p-4 rounded-2xl border border-neutral-800">
+                    <div className="relative group cursor-pointer">
+                      {avatarPreview ? (
+                        <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-lime-400 shadow-md" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center text-xs text-neutral-400 border border-neutral-700 font-bold">Foto</div>
+                      )}
+                      <label className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-[10px] text-lime-400 font-extrabold text-center px-1">
+                        Alterar
+                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                      </label>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-white mb-0.5">Foto de Perfil / Logotipo</p>
+                      <label className="inline-block text-xs font-extrabold text-lime-400 cursor-pointer hover:underline">
+                        Toque aqui para alterar imagem...
+                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                      </label>
+                      {avatarFile ? (
+                        <p className="text-[10px] text-lime-400/80 mt-1 truncate max-w-[200px]">✓ {avatarFile.name} pronto</p>
+                      ) : (
+                        <p className="text-[10px] text-neutral-400 mt-1">Recomendado formato quadrado</p>
+                      )}
                     </div>
                   </div>
 
@@ -1100,7 +1133,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition">
+                  <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
                     {authLoading ? 'A guardar...' : 'Salvar Alterações'}
                   </button>
                 </form>
