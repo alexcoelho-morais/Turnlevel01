@@ -26,6 +26,17 @@ const SKILL_OPTIONS = [
   'Vendas / Balcão'
 ]
 
+const WEEK_DAYS = [
+  { value: '', label: 'Todos os dias' },
+  { value: '1', label: 'Segunda-feira' },
+  { value: '2', label: 'Terça-feira' },
+  { value: '3', label: 'Quarta-feira' },
+  { value: '4', label: 'Quinta-feira' },
+  { value: '5', label: 'Sexta-feira' },
+  { value: '6', label: 'Sábado' },
+  { value: '0', label: 'Domingo' }
+]
+
 const AGE_OPTIONS = Array.from({ length: 34 }, (_, i) => i + 17)
 
 function TurnLevelLogo({ size = 'md', animated = false }) {
@@ -70,7 +81,9 @@ export default function App() {
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [activeTab, setActiveTab] = useState('shifts')
 
+  // 'welcome', 'login', 'signup', 'verify_email'
   const [authView, setAuthView] = useState('welcome')
+  const [howItWorksTab, setHowItWorksTab] = useState('worker')
   const [signupStep, setSignupStep] = useState(1)
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
@@ -101,12 +114,21 @@ export default function App() {
 
   const [shifts, setShifts] = useState([])
   const [applications, setApplications] = useState([])
+  const [allReviews, setAllReviews] = useState([])
   const [cityFilter, setCityFilter] = useState('')
+  const [dayFilter, setDayFilter] = useState('')
   const [loadingShifts, setLoadingShifts] = useState(true)
 
   const [selectedShiftModal, setSelectedShiftModal] = useState(null)
   const [selectedWorkerModal, setSelectedWorkerModal] = useState(null)
 
+  // Modal de Avaliação Mútua
+  const [reviewModalApp, setReviewModalApp] = useState(null)
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewComment, setReviewComment] = useState('')
+  const [submittingReview, setSubmittingReview] = useState(false)
+
+  // Formulário de Publicação de Turno
   const [title, setTitle] = useState('')
   const [vacancies, setVacancies] = useState('1')
   const [workload, setWorkload] = useState('6 horas')
@@ -115,6 +137,7 @@ export default function App() {
   const [shiftDate, setShiftDate] = useState('')
   const [transportInfo, setTransportInfo] = useState('Vale-transporte pago')
   const [mealInfo, setMealInfo] = useState('Alimentação no local')
+  const [vehicleRequired, setVehicleRequired] = useState('Não exige veículo')
   const [requirements, setRequirements] = useState('')
   const [shiftNeighborhood, setShiftNeighborhood] = useState('')
   const [shiftStreet, setShiftStreet] = useState('')
@@ -123,7 +146,7 @@ export default function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       if (session) loadUserData(session.user.id)
-      else fetchShifts('')
+      else fetchShifts('', '')
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -151,10 +174,13 @@ export default function App() {
       fillProfileForm(prof)
       const initialCity = prof.city || ''
       setCityFilter(initialCity)
-      await fetchShifts(initialCity)
-      await fetchApplications(prof)
+      await Promise.all([
+        fetchShifts(initialCity, dayFilter),
+        fetchApplications(prof),
+        fetchAllReviews()
+      ])
     } else {
-      await fetchShifts('')
+      await fetchShifts('', '')
     }
     setLoadingProfile(false)
   }
@@ -296,6 +322,14 @@ export default function App() {
       }
 
       await supabase.from('profiles').upsert(profilePayload)
+
+      // Se o Supabase estiver configurado para exigir confirmação de e-mail, session virá null
+      if (!signUpData.session) {
+        setAuthView('verify_email')
+        setAuthLoading(false)
+        return
+      }
+
       await loadUserData(userId)
     }
     setAuthLoading(false)
@@ -341,7 +375,30 @@ export default function App() {
     setAuthLoading(false)
   }
 
-  async function fetchShifts(filterCity = cityFilter) {
+  async function fetchAllReviews() {
+    const { data } = await supabase
+      .from('reviews')
+      .select(`
+        *,
+        reviewer:profiles!reviews_reviewer_id_fkey (full_name, role)
+      `)
+      .order('created_at', { ascending: false })
+    setAllReviews(data || [])
+  }
+
+  function getReputationStats(userId) {
+    const userReviews = allReviews.filter((r) => r.reviewed_id === userId)
+    const count = userReviews.length
+    if (count === 0) return { avg: null, count: 0, reviews: [] }
+    const sum = userReviews.reduce((acc, r) => acc + r.rating, 0)
+    return {
+      avg: (sum / count).toFixed(1),
+      count,
+      reviews: userReviews
+    }
+  }
+
+  async function fetchShifts(filterCity = cityFilter, filterDay = dayFilter) {
     setLoadingShifts(true)
     const { data, error } = await supabase
       .from('shifts')
@@ -354,19 +411,24 @@ export default function App() {
       .order('created_at', { ascending: false })
 
     if (!error && data) {
+      let result = data
       if (filterCity && filterCity.trim() !== '') {
         const term = filterCity.trim().toLowerCase()
-        const filtered = data.filter(
+        result = result.filter(
           (s) =>
             (s.city && s.city.toLowerCase().includes(term)) ||
             (s.location && s.location.toLowerCase().includes(term)) ||
             (s.shift_neighborhood && s.shift_neighborhood.toLowerCase().includes(term)) ||
             (s.company?.city && s.company.city.toLowerCase().includes(term))
         )
-        setShifts(filtered)
-      } else {
-        setShifts(data)
       }
+      if (filterDay !== '') {
+        result = result.filter((s) => {
+          const d = new Date(s.shift_date)
+          return String(d.getDay()) === filterDay
+        })
+      }
+      setShifts(result)
     }
     setLoadingShifts(false)
   }
@@ -427,6 +489,7 @@ export default function App() {
         shift_date: new Date(shiftDate).toISOString(),
         transport_info: transportInfo,
         meal_info: mealInfo,
+        vehicle_required: vehicleRequired,
         requirements,
         description: requirements,
         shift_neighborhood: bairroFinal,
@@ -444,7 +507,7 @@ export default function App() {
       setPayRate('')
       setShiftDate('')
       setRequirements('')
-      fetchShifts(cityFilter)
+      fetchShifts(cityFilter, dayFilter)
     }
   }
 
@@ -472,14 +535,58 @@ export default function App() {
       }
       setSelectedWorkerModal(null)
       fetchApplications(profile)
-      fetchShifts(cityFilter)
+      fetchShifts(cityFilter, dayFilter)
+    }
+  }
+
+  async function handleConfirmShiftEndAndOpenReview(app) {
+    const isCompany = (profile?.role || role) === 'company'
+    const updates = isCompany
+      ? { company_confirmed_end: true, completed_at: new Date().toISOString() }
+      : { worker_confirmed_end: true, completed_at: new Date().toISOString() }
+
+    await supabase.from('shift_applications').update(updates).eq('id', app.id)
+    await fetchApplications(profile)
+
+    setReviewRating(5)
+    setReviewComment('')
+    setReviewModalApp(app)
+  }
+
+  async function handleSubmitReview(e) {
+    e.preventDefault()
+    if (!reviewModalApp || !session) return
+    setSubmittingReview(true)
+
+    const isCompany = (profile?.role || role) === 'company'
+    const reviewedId = isCompany ? reviewModalApp.worker_id : reviewModalApp.shift?.company_id
+
+    const { error } = await supabase.from('reviews').insert([
+      {
+        shift_id: reviewModalApp.shift_id,
+        application_id: reviewModalApp.id,
+        reviewer_id: session.user.id,
+        reviewed_id: reviewedId,
+        reviewer_role: isCompany ? 'company' : 'worker',
+        rating: reviewRating,
+        comment: reviewComment.trim()
+      }
+    ])
+
+    setSubmittingReview(false)
+    if (error) {
+      if (error.code === '23505') alert('Você já avaliou este turno!')
+      else alert('Erro ao enviar avaliação: ' + error.message)
+    } else {
+      alert('Avaliação registrada com sucesso! Obrigado por fortalecer a comunidade TurnLevel.')
+      setReviewModalApp(null)
+      fetchAllReviews()
     }
   }
 
   if (!session) {
     return (
       <div className="min-h-screen bg-[#050505] text-white flex flex-col justify-between p-4 sm:p-6 relative overflow-hidden">
-        {/* ESTILOS DE ANIMAÇÃO LÍQUIDA E FLUÍDA */}
         <style>{`
           @keyframes floatSlow {
             0%, 100% { transform: translateY(0px) rotate(0deg); }
@@ -494,78 +601,68 @@ export default function App() {
             0% { transform: translateX(0%); }
             100% { transform: translateX(-50%); }
           }
-          .animate-float {
-            animation: floatSlow 3.5s ease-in-out infinite;
-          }
-          .animate-liquid {
-            animation: liquidBlob 10s ease-in-out infinite;
-          }
-          .animate-liquid-delay {
-            animation: liquidBlob 13s ease-in-out infinite reverse;
-          }
-          .animate-marquee {
-            display: flex;
-            width: max-content;
-            animation: marqueeScroll 18s linear infinite;
-          }
+          .animate-float { animation: floatSlow 3.5s ease-in-out infinite; }
+          .animate-liquid { animation: liquidBlob 10s ease-in-out infinite; }
+          .animate-liquid-delay { animation: liquidBlob 13s ease-in-out infinite reverse; }
+          .animate-marquee { display: flex; width: max-content; animation: marqueeScroll 18s linear infinite; }
         `}</style>
 
-        {/* ONDAS LÍQUIDAS DE FUNDO (EFEITO ÁGUA EM MOVIMENTO) */}
         <div className="pointer-events-none absolute -top-24 -left-24 w-80 h-80 bg-lime-400/15 blur-3xl animate-liquid" />
         <div className="pointer-events-none absolute top-1/2 -right-28 w-96 h-96 bg-lime-400/10 blur-3xl animate-liquid-delay" />
 
-        <div className="max-w-md w-full mx-auto space-y-6 pt-4 relative z-10">
-          <div className="text-center space-y-2.5">
+        <div className="max-w-md w-full mx-auto space-y-5 pt-3 relative z-10">
+          <div className="text-center space-y-2">
             <TurnLevelLogo size="lg" animated={true} />
-            <p className="text-xs text-neutral-400 font-medium">Conectando talentos e empresas em tempo real</p>
+            <p className="text-xs text-neutral-400 font-medium">
+              A ponte direta entre quem precisa trabalhar hoje e quem precisa contratar rápido.
+            </p>
           </div>
 
-          {/* TELA DE BOAS-VINDAS (LANDING DE CREDIBILIDADE + MOVIMENTO) */}
           {authView === 'welcome' && (
-            <div className="space-y-5">
-              {/* FAIXA FLUÍDA EM MOVIMENTO CONTÍNUO */}
+            <div className="space-y-4">
+              {/* FAIXA FLUÍDA EM MOVIMENTO */}
               <div className="overflow-hidden rounded-full bg-[#111111]/90 border border-neutral-800/80 py-2 px-1">
                 <div className="animate-marquee gap-6 text-[11px] font-bold text-neutral-300">
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Turnos Imediatos</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Pagamento Direto</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Conexão via WhatsApp</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Sem Taxas Ocultas</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Turnos Imediatos</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Pagamento Direto</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Conexão via WhatsApp</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" /> Sem Taxas Ocultas</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Cadastro 100% Gratuito</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Turnos por Proximidade</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Avaliações Verificadas</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Direto no WhatsApp</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Cadastro 100% Gratuito</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Turnos por Proximidade</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Avaliações Verificadas</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Direto no WhatsApp</span>
                 </div>
               </div>
 
-              <div className="bg-[#111111]/90 backdrop-blur-md border border-neutral-800 rounded-3xl p-6 shadow-2xl space-y-4">
+              {/* PROPOSTA DE VALOR + ESCOLHA DE PERFIL */}
+              <div className="bg-[#111111]/90 backdrop-blur-md border border-neutral-800 rounded-3xl p-5 shadow-2xl space-y-4">
                 <div className="space-y-1.5">
-                  <div className="inline-flex items-center gap-1.5 bg-lime-400/10 text-lime-400 border border-lime-400/30 px-3 py-1 rounded-full">
-                    <span className="w-1.5 h-1.5 rounded-full bg-lime-400 animate-ping" />
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Plataforma Ativa</span>
+                  <div className="inline-flex items-center gap-1.5 bg-lime-400/15 text-lime-400 border border-lime-400/30 px-3 py-1 rounded-full">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">✓ Cadastro 100% Gratuito</span>
                   </div>
                   <h1 className="text-xl font-extrabold text-white pt-1 leading-snug">
-                    Trabalho flexível ou reforço imediato para sua equipe.
+                    Ganhe por turno trabalhado ou complete sua equipe em minutos.
                   </h1>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Escolha seu perfil abaixo para acessar oportunidades por proximidade ou publicar vagas agora mesmo:
+                    Sem burocracia e sem taxas escondidas. Selecione seu perfil para criar sua conta grátis:
                   </p>
                 </div>
 
-                <div className="grid gap-3 pt-1">
+                <div className="grid gap-3">
                   <button
                     onClick={() => { setRole('worker'); setAuthView('signup'); setSignupStep(1); setAuthError('') }}
-                    className="w-full bg-[#050505] hover:bg-neutral-900 border border-neutral-800 hover:border-lime-400 p-4 rounded-2xl text-left transition-all duration-300 group flex items-center justify-between hover:shadow-[0_0_20px_rgba(163,230,53,0.12)]"
+                    className="w-full bg-[#050505] hover:bg-neutral-900 border border-neutral-800 hover:border-lime-400 p-4 rounded-2xl text-left transition-all duration-300 group flex items-center justify-between hover:shadow-[0_0_20px_rgba(163,230,53,0.15)]"
                   >
                     <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-xl bg-lime-400/10 border border-lime-400/20 flex items-center justify-center text-lime-400 group-hover:scale-110 transition-transform">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-5 h-5">
+                      <div className="w-11 h-11 rounded-xl bg-lime-400 text-black flex items-center justify-center font-extrabold group-hover:scale-105 transition-transform">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="w-5 h-5">
                           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                           <circle cx="12" cy="7" r="4" />
                         </svg>
                       </div>
                       <div className="space-y-0.5">
                         <div className="text-sm font-extrabold text-white group-hover:text-lime-400 transition">Sou Trabalhador</div>
-                        <div className="text-xs text-neutral-400">Quero fazer turnos e ganhar renda extra</div>
+                        <div className="text-xs text-neutral-400">Escolha seus dias, veja o valor e candidate-se grátis</div>
                       </div>
                     </div>
                     <span className="text-lime-400 text-lg font-bold group-hover:translate-x-1 transition-transform">→</span>
@@ -573,49 +670,108 @@ export default function App() {
 
                   <button
                     onClick={() => { setRole('company'); setAuthView('signup'); setSignupStep(1); setAuthError('') }}
-                    className="w-full bg-[#050505] hover:bg-neutral-900 border border-neutral-800 hover:border-lime-400 p-4 rounded-2xl text-left transition-all duration-300 group flex items-center justify-between hover:shadow-[0_0_20px_rgba(163,230,53,0.12)]"
+                    className="w-full bg-[#050505] hover:bg-neutral-900 border border-neutral-800 hover:border-lime-400 p-4 rounded-2xl text-left transition-all duration-300 group flex items-center justify-between hover:shadow-[0_0_20px_rgba(163,230,53,0.15)]"
                   >
                     <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-xl bg-lime-400/10 border border-lime-400/20 flex items-center justify-center text-lime-400 group-hover:scale-110 transition-transform">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-5 h-5">
+                      <div className="w-11 h-11 rounded-xl bg-white text-black flex items-center justify-center font-extrabold group-hover:scale-105 transition-transform">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="w-5 h-5">
                           <rect x="3" y="3" width="18" height="18" rx="2" />
                           <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
                         </svg>
                       </div>
                       <div className="space-y-0.5">
                         <div className="text-sm font-extrabold text-white group-hover:text-lime-400 transition">Sou Empresa</div>
-                        <div className="text-xs text-neutral-400">Quero publicar vagas e contratar rápido</div>
+                        <div className="text-xs text-neutral-400">Publique vagas, veja avaliações e chame no WhatsApp</div>
                       </div>
                     </div>
                     <span className="text-lime-400 text-lg font-bold group-hover:translate-x-1 transition-transform">→</span>
                   </button>
                 </div>
 
-                <div className="pt-3 border-t border-neutral-800/80 text-center">
+                <div className="pt-2 border-t border-neutral-800/80 text-center">
                   <button
                     onClick={() => { setAuthView('login'); setAuthError('') }}
                     className="text-xs text-neutral-400 hover:text-white transition"
                   >
-                    Já possui cadastro? <span className="text-lime-400 font-extrabold underline">Entrar na conta</span>
+                    Já tem cadastro? <span className="text-lime-400 font-extrabold underline">Entrar na conta</span>
                   </button>
                 </div>
               </div>
 
-              {/* BLOCO DE DADOS E CONFIANÇA */}
-              <div className="grid grid-cols-3 gap-2.5 text-center">
-                <div className="bg-[#111111]/80 backdrop-blur-sm border border-neutral-800/80 p-3 rounded-2xl">
-                  <div className="text-lime-400 font-extrabold text-sm">100% Direto</div>
-                  <div className="text-[10px] text-neutral-400 mt-0.5">Sem intermediários</div>
+              {/* COMO FUNCIONA PARA CADA PÚBLICO */}
+              <div className="bg-[#111111]/85 backdrop-blur-sm border border-neutral-800/90 rounded-3xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-extrabold uppercase tracking-wider text-neutral-300">Como funciona na prática</h2>
+                  <div className="flex bg-[#050505] p-1 rounded-xl border border-neutral-800">
+                    <button
+                      type="button"
+                      onClick={() => setHowItWorksTab('worker')}
+                      className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition ${howItWorksTab === 'worker' ? 'bg-lime-400 text-black' : 'text-neutral-400'}`}
+                    >
+                      Trabalhador
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHowItWorksTab('company')}
+                      className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition ${howItWorksTab === 'company' ? 'bg-lime-400 text-black' : 'text-neutral-400'}`}
+                    >
+                      Empresa
+                    </button>
+                  </div>
                 </div>
-                <div className="bg-[#111111]/80 backdrop-blur-sm border border-neutral-800/80 p-3 rounded-2xl">
-                  <div className="text-lime-400 font-extrabold text-sm">WhatsApp</div>
-                  <div className="text-[10px] text-neutral-400 mt-0.5">Aceite imediato</div>
-                </div>
-                <div className="bg-[#111111]/80 backdrop-blur-sm border border-neutral-800/80 p-3 rounded-2xl">
-                  <div className="text-lime-400 font-extrabold text-sm">Por Bairro</div>
-                  <div className="text-[10px] text-neutral-400 mt-0.5">Vagas perto de você</div>
-                </div>
+
+                {howItWorksTab === 'worker' ? (
+                  <div className="space-y-2.5 text-xs text-neutral-300">
+                    <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
+                      <span className="w-5 h-5 rounded-full bg-lime-400 text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">1</span>
+                      <p><strong>Crie seu perfil grátis</strong> com suas habilidades, bairro e raio de deslocamento.</p>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
+                      <span className="w-5 h-5 rounded-full bg-lime-400 text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">2</span>
+                      <p><strong>Filtre turnos pelo dia da semana</strong>, veja a nota da empresa e o valor líquido pago.</p>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
+                      <span className="w-5 h-5 rounded-full bg-lime-400 text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">3</span>
+                      <p><strong>Trabalhe e construa reputação:</strong> ao ser aceito, combine direto pelo WhatsApp e receba avaliações.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 text-xs text-neutral-300">
+                    <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
+                      <span className="w-5 h-5 rounded-full bg-white text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">1</span>
+                      <p><strong>Cadastre sua empresa grátis</strong> e publique o turno informando função, valor, horário e se exige veículo.</p>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
+                      <span className="w-5 h-5 rounded-full bg-white text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">2</span>
+                      <p><strong>Analise o histórico dos candidatos:</strong> veja quantos turnos já concluíram e as avaliações de outras empresas.</p>
+                    </div>
+                    <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
+                      <span className="w-5 h-5 rounded-full bg-white text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">3</span>
+                      <p><strong>Aprove e conecte-se no WhatsApp:</strong> ao final do serviço, confirme o encerramento e avalie o profissional.</p>
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
+          )}
+
+          {/* TELA DE CONFIRMAÇÃO DE E-MAIL */}
+          {authView === 'verify_email' && (
+            <div className="bg-[#111111]/95 backdrop-blur-md border border-lime-400/40 rounded-3xl p-6 shadow-2xl text-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-lime-400/15 border border-lime-400 text-lime-400 flex items-center justify-center mx-auto text-2xl">
+                ✉️
+              </div>
+              <h2 className="text-lg font-extrabold text-white">Confirme seu e-mail</h2>
+              <p className="text-xs text-neutral-300 leading-relaxed">
+                Enviamos um link de ativação para <strong className="text-lime-400">{email}</strong>. Abra sua caixa de entrada (ou spam) e clique no link para liberar seu acesso.
+              </p>
+              <button
+                type="button"
+                onClick={() => setAuthView('login')}
+                className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition"
+              >
+                Já confirmei, ir para Login →
+              </button>
             </div>
           )}
 
@@ -643,7 +799,7 @@ export default function App() {
                 </button>
 
                 <button type="button" onClick={() => { setAuthView('welcome'); setAuthError('') }} className="w-full text-center text-xs text-neutral-400 hover:text-white pt-2">
-                  Ainda não tem conta? <span className="text-lime-400 font-semibold">Criar cadastro</span>
+                  Ainda não tem conta? <span className="text-lime-400 font-semibold">Criar cadastro grátis</span>
                 </button>
               </form>
             </div>
@@ -654,7 +810,7 @@ export default function App() {
             <div className="bg-[#111111]/95 backdrop-blur-md border border-neutral-800 rounded-3xl p-6 shadow-2xl">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h2 className="text-base font-bold text-white">Criar Cadastro ({role === 'company' ? 'Empresa' : 'Trabalhador'})</h2>
+                  <h2 className="text-base font-bold text-white">Cadastro Grátis ({role === 'company' ? 'Empresa' : 'Trabalhador'})</h2>
                   <p className="text-[11px] text-neutral-400">Etapa {signupStep} de 3</p>
                 </div>
                 <button type="button" onClick={() => setAuthView('welcome')} className="text-xs text-neutral-400 hover:text-white">Cancelar</button>
@@ -823,12 +979,15 @@ export default function App() {
           )}
         </div>
 
-        <div className="text-center pb-2 relative z-10">
+        <div className="text-center pb-2 pt-4 relative z-10">
           <p className="text-[11px] text-neutral-500">TurnLevel © 2026 • Todos os direitos reservados</p>
         </div>
       </div>
     )
   }
+
+  const myReputation = getReputationStats(session.user.id)
+  const myCompletedCount = applications.filter((a) => a.status === 'accepted' && (a.company_confirmed_end || a.worker_confirmed_end)).length
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pb-24">
@@ -840,7 +999,8 @@ export default function App() {
             <div className="text-right hidden sm:block">
               <p className="text-xs font-bold text-white leading-tight">{profile?.full_name || fullName}</p>
               <p className="text-[11px] text-lime-400 font-medium">
-                {profile?.city || city || 'Sem cidade'} • {(profile?.role || role) === 'company' ? 'Empresa' : 'Trabalhador'}
+                {myReputation.avg ? `★ ${myReputation.avg} • ` : ''}
+                {profile?.city || city || 'Sem cidade'}
               </p>
             </div>
             {profile?.avatar_url ? (
@@ -873,7 +1033,7 @@ export default function App() {
                     <form onSubmit={handleCreateShift} className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Função / Cargo</label>
-                        <input type="text" required placeholder="Ex: Garçom" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <input type="text" required placeholder="Ex: Garçom / Entregador" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Vagas</label>
@@ -919,6 +1079,15 @@ export default function App() {
                           <option value="Não fornece alimentação">Não fornece alimentação</option>
                         </select>
                       </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-neutral-400 mb-1">Exigência de Veículo (Moto ou Carro)</label>
+                        <select value={vehicleRequired} onChange={(e) => setVehicleRequired(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white">
+                          <option value="Não exige veículo">Não exige veículo</option>
+                          <option value="Moto própria obrigatória">🏍️ Moto própria obrigatória</option>
+                          <option value="Carro próprio obrigatório">🚗 Carro próprio obrigatório</option>
+                          <option value="Moto ou Carro próprio">🏍️/🚗 Moto ou Carro próprio</option>
+                        </select>
+                      </div>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Bairro / Setor</label>
                         <input type="text" required placeholder="Setor Bueno" value={shiftNeighborhood} onChange={(e) => setShiftNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
@@ -929,7 +1098,7 @@ export default function App() {
                       </div>
                       <div className="sm:col-span-2">
                         <label className="block text-xs text-neutral-400 mb-1">Exigências / Observações</label>
-                        <input type="text" placeholder="Calça preta, sapato fechado..." value={requirements} onChange={(e) => setRequirements(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <input type="text" placeholder="Calça preta, CNH em dia..." value={requirements} onChange={(e) => setRequirements(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <button type="submit" className="sm:col-span-2 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
                         + Publicar Vaga Agora
@@ -938,27 +1107,43 @@ export default function App() {
                   </section>
                 )}
 
-                <section className="bg-[#111111] border border-neutral-800 rounded-2xl p-3.5 flex flex-wrap gap-2 items-center justify-between">
-                  <div className="flex-1 min-w-[180px] flex items-center gap-2 bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2">
-                    <span className="text-lime-400 text-xs">📍</span>
-                    <input
-                      type="text"
-                      value={cityFilter}
-                      onChange={(e) => setCityFilter(e.target.value)}
-                      placeholder="Filtrar por cidade ou bairro..."
-                      className="w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-500"
-                    />
+                {/* BARRA DE FILTRO COM CIDADE + DIA DA SEMANA */}
+                <section className="bg-[#111111] border border-neutral-800 rounded-2xl p-3.5 space-y-2.5">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <div className="flex-1 min-w-[160px] flex items-center gap-2 bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5">
+                      <span className="text-lime-400 text-xs">📍</span>
+                      <input
+                        type="text"
+                        value={cityFilter}
+                        onChange={(e) => setCityFilter(e.target.value)}
+                        placeholder="Cidade ou bairro..."
+                        className="w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-500"
+                      />
+                    </div>
+                    <select
+                      value={dayFilter}
+                      onChange={(e) => {
+                        setDayFilter(e.target.value)
+                        fetchShifts(cityFilter, e.target.value)
+                      }}
+                      className="bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-lime-400"
+                    >
+                      {WEEK_DAYS.map((d) => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => fetchShifts(cityFilter)} className="bg-lime-400 hover:bg-lime-300 text-black text-xs font-bold px-4 py-2.5 rounded-xl transition">
-                      Filtrar
+                    <button onClick={() => fetchShifts(cityFilter, dayFilter)} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-2.5 rounded-xl transition">
+                      Buscar Turnos
                     </button>
-                    <button onClick={() => { setCityFilter(''); fetchShifts('') }} className="bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-medium px-3 py-2.5 rounded-xl border border-neutral-800 transition">
-                      Todas
+                    <button onClick={() => { setCityFilter(''); setDayFilter(''); fetchShifts('', '') }} className="bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-medium px-4 py-2.5 rounded-xl border border-neutral-800 transition">
+                      Limpar
                     </button>
                   </div>
                 </section>
 
+                {/* LISTAGEM DE TURNOS */}
                 <section className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-base font-bold text-white">Turnos Disponíveis</h2>
@@ -971,12 +1156,15 @@ export default function App() {
                     <p className="text-sm text-neutral-400">A procurar turnos...</p>
                   ) : shifts.length === 0 ? (
                     <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
-                      <p className="text-sm text-neutral-400">Nenhum turno encontrado nesta região.</p>
+                      <p className="text-sm text-neutral-400">Nenhum turno encontrado com esses filtros.</p>
                     </div>
                   ) : (
                     <div className="grid gap-4 sm:grid-cols-2">
                       {shifts.map((shift) => {
                         const applied = applications.some((a) => a.shift_id === shift.id)
+                        const compRep = getReputationStats(shift.company?.id)
+                        const hasVehicleReq = shift.vehicle_required && shift.vehicle_required !== 'Não exige veículo'
+
                         return (
                           <div
                             key={shift.id}
@@ -984,13 +1172,15 @@ export default function App() {
                             className="bg-white text-black hover:scale-[1.01] cursor-pointer rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition-all"
                           >
                             <div>
-                              <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center justify-between gap-2 mb-3">
                                 <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                                  Turno
+                                  {new Date(shift.shift_date).toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase()} • {shift.workload || '6 horas'}
                                 </span>
-                                <span className="text-[11px] font-bold bg-black text-lime-400 px-2.5 py-0.5 rounded-full">
-                                  {shift.workload || '6 horas'}
-                                </span>
+                                {hasVehicleReq && (
+                                  <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
+                                    {shift.vehicle_required}
+                                  </span>
+                                )}
                               </div>
 
                               <h3 className="font-extrabold text-black text-xl leading-tight">{shift.title}</h3>
@@ -1003,15 +1193,20 @@ export default function App() {
                               </div>
 
                               <div className="mt-4 pt-3 border-t border-neutral-200 space-y-1.5">
-                                <div className="flex items-center gap-2">
-                                  {shift.company?.avatar_url ? (
-                                    <img src={shift.company.avatar_url} alt="Logo" className="w-6 h-6 rounded-full object-cover border border-neutral-300" />
-                                  ) : (
-                                    <div className="w-6 h-6 rounded-full bg-black text-lime-400 flex items-center justify-center text-[10px] font-bold">
-                                      {(shift.company?.full_name || 'E')[0]}
-                                    </div>
-                                  )}
-                                  <p className="text-xs font-bold text-neutral-800">{shift.company?.full_name || 'Empresa'}</p>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    {shift.company?.avatar_url ? (
+                                      <img src={shift.company.avatar_url} alt="Logo" className="w-6 h-6 rounded-full object-cover border border-neutral-300" />
+                                    ) : (
+                                      <div className="w-6 h-6 rounded-full bg-black text-lime-400 flex items-center justify-center text-[10px] font-bold">
+                                        {(shift.company?.full_name || 'E')[0]}
+                                      </div>
+                                    )}
+                                    <p className="text-xs font-bold text-neutral-800">{shift.company?.full_name || 'Empresa'}</p>
+                                  </div>
+                                  <span className="text-[11px] font-extrabold text-amber-600">
+                                    {compRep.avg ? `★ ${compRep.avg} (${compRep.count})` : 'Nova empresa'}
+                                  </span>
                                 </div>
                                 <p className="text-xs text-neutral-600 font-medium">📍 {shift.location}</p>
                                 <p className="text-xs text-neutral-500">📅 {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}</p>
@@ -1033,7 +1228,7 @@ export default function App() {
                                     onClick={() => setSelectedShiftModal(shift)}
                                     className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-sm"
                                   >
-                                    Ver Vaga e Candidatar
+                                    Ver Detalhes e Candidatar
                                   </button>
                                 )
                               ) : (
@@ -1054,7 +1249,7 @@ export default function App() {
             {activeTab === 'applications' && (
               <section className="space-y-4">
                 <h2 className="text-lg font-bold text-white">
-                  {(profile?.role || role) === 'company' ? 'Candidatos Recebidos' : 'Minhas Candidaturas'}
+                  {(profile?.role || role) === 'company' ? 'Candidatos & Turnos Ativos' : 'Minhas Candidaturas & Turnos'}
                 </h2>
                 {applications.length === 0 ? (
                   <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
@@ -1064,25 +1259,28 @@ export default function App() {
                   <div className="space-y-4">
                     {applications.map((app) => {
                       const isAccepted = app.status === 'accepted'
+                      const isCompany = (profile?.role || role) === 'company'
                       const companyPhone = app.shift?.company?.phone_ddd && app.shift?.company?.phone ? `55${app.shift.company.phone_ddd}${app.shift.company.phone.replace(/\D/g, '')}` : ''
                       const workerPhone = app.worker?.phone_ddd && app.worker?.phone ? `55${app.worker.phone_ddd}${app.worker.phone.replace(/\D/g, '')}` : ''
+                      const workerRep = app.worker ? getReputationStats(app.worker.id) : { avg: null, count: 0 }
+                      const alreadyReviewed = allReviews.some((r) => r.application_id === app.id && r.reviewer_id === session.user.id)
 
                       return (
                         <div
                           key={app.id}
                           onClick={() => {
-                            if ((profile?.role || role) === 'company' && app.worker) {
+                            if (isCompany && app.worker) {
                               setSelectedWorkerModal(app)
                             }
                           }}
-                          className={`bg-white text-black rounded-3xl p-5 space-y-3 shadow-lg ${(profile?.role || role) === 'company' ? 'cursor-pointer hover:scale-[1.01] transition' : ''}`}
+                          className={`bg-white text-black rounded-3xl p-5 space-y-3 shadow-lg ${isCompany ? 'cursor-pointer hover:scale-[1.01] transition' : ''}`}
                         >
                           <div className="flex justify-between items-start gap-2">
                             <div>
                               <span className="text-xs font-extrabold text-[#4d7c0f] uppercase tracking-wide">
                                 {app.shift?.title} • R$ {Number(app.shift?.pay_rate || 0).toFixed(2).replace('.', ',')}
                               </span>
-                              {(profile?.role || role) === 'company' ? (
+                              {isCompany ? (
                                 <div className="flex items-center gap-3 mt-2.5">
                                   {app.worker?.avatar_url ? (
                                     <img src={app.worker.avatar_url} alt="Foto" className="w-12 h-12 rounded-full object-cover border-2 border-black" />
@@ -1092,9 +1290,14 @@ export default function App() {
                                     </div>
                                   )}
                                   <div>
-                                    <h3 className="font-extrabold text-black text-base">{app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}</h3>
+                                    <h3 className="font-extrabold text-black text-base">
+                                      {app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}
+                                    </h3>
+                                    <p className="text-xs font-extrabold text-amber-600">
+                                      {workerRep.avg ? `★ ${workerRep.avg} (${workerRep.count} avaliações)` : 'Novo no TurnLevel'}
+                                    </p>
                                     <p className="text-xs text-neutral-600 font-medium">📍 {app.worker?.neighborhood}, {app.worker?.city}</p>
-                                    <p className="text-[11px] text-neutral-500 underline mt-0.5">Toque para ver ficha completa</p>
+                                    <p className="text-[11px] text-neutral-500 underline mt-0.5">Toque para ver histórico e ficha</p>
                                   </div>
                                 </div>
                               ) : (
@@ -1110,31 +1313,62 @@ export default function App() {
                             </span>
                           </div>
 
+                          {/* AÇÕES QUANDO ACEITO: WHATSAPP + CONFIRMAR TÉRMINO E AVALIAR */}
                           {isAccepted && (
-                            <div className="pt-2" onClick={(e) => e.stopPropagation()}>
-                              {(profile?.role || role) === 'company' && workerPhone ? (
+                            <div className="pt-2 space-y-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
+                              {isCompany && workerPhone ? (
                                 <a
                                   href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20o%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel!%20Vamos%20alinhar%20os%20detalhes?`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3.5 rounded-2xl transition shadow-sm"
+                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
                                 >
                                   💬 Chamar Trabalhador no WhatsApp
                                 </a>
-                              ) : (profile?.role || role) === 'worker' && companyPhone ? (
+                              ) : !isCompany && companyPhone ? (
                                 <a
                                   href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20no%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel!`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3.5 rounded-2xl transition shadow-sm"
+                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
                                 >
                                   💬 Falar com a Empresa no WhatsApp
                                 </a>
                               ) : null}
+
+                              {/* CONFIRMAÇÃO DE TÉRMINO E AVALIAÇÃO */}
+                              {alreadyReviewed ? (
+                                <div className="w-full text-center text-xs font-bold bg-neutral-100 text-neutral-700 py-2.5 rounded-2xl">
+                                  ✓ Término confirmado e avaliação enviada
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <button
+                                    onClick={() => handleConfirmShiftEndAndOpenReview(app)}
+                                    className="w-full bg-black hover:bg-neutral-800 text-lime-400 text-xs font-extrabold py-3 rounded-2xl transition"
+                                  >
+                                    ★ Confirmar Término e Avaliar
+                                  </button>
+                                  {(isCompany ? workerPhone : companyPhone) && (
+                                    <a
+                                      href={`https://wa.me/${isCompany ? workerPhone : companyPhone}?text=${encodeURIComponent(
+                                        isCompany
+                                          ? `Olá ${app.worker?.full_name || ''}! Confirmamos o término do seu turno de ${app.shift?.title || ''} pelo TurnLevel. Por favor, acesse o app para confirmar e deixar sua avaliação sobre nossa empresa!`
+                                          : `Olá ${app.shift?.company?.full_name || ''}! Finalizei o turno de ${app.shift?.title || ''} pelo TurnLevel. Já confirmei no app, aguardo sua confirmação e avaliação!`
+                                      )}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center justify-center gap-1.5 w-full bg-neutral-200 hover:bg-neutral-300 text-black text-xs font-bold py-3 rounded-2xl transition"
+                                    >
+                                      📲 Notificar Término no WhatsApp
+                                    </a>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
 
-                          {(profile?.role || role) === 'company' && app.status === 'pending' && (
+                          {isCompany && app.status === 'pending' && (
                             <div className="flex gap-2 pt-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
                               <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'accepted')} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl">
                                 Aceitar ✓
@@ -1153,251 +1387,378 @@ export default function App() {
             )}
 
             {activeTab === 'profile' && (
-              <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-5">
-                <h2 className="text-lg font-bold text-white">Meus Dados Cadastrais</h2>
-                <form onSubmit={handleUpdateProfile} className="space-y-4">
-                  <div className="flex items-center gap-4 bg-[#050505] p-4 rounded-2xl border border-neutral-800">
-                    <div className="relative group cursor-pointer">
-                      {avatarPreview ? (
-                        <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-lime-400 shadow-md" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center text-xs text-neutral-400 border border-neutral-700 font-bold">Foto</div>
-                      )}
-                      <label className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-[10px] text-lime-400 font-extrabold text-center px-1">
-                        Alterar
-                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
-                      </label>
+              <div className="space-y-6">
+                {/* CARTÃO DE HISTÓRICO E REPUTAÇÃO DO USUÁRIO */}
+                <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-white">Meu Histórico & Avaliações</h2>
+                    <span className="text-xs font-extrabold bg-lime-400 text-black px-3 py-1 rounded-full">
+                      {myReputation.avg ? `★ ${myReputation.avg}` : 'Sem notas'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-[#050505] border border-neutral-800 p-3.5 rounded-2xl">
+                      <span className="text-[11px] text-neutral-400 block">Turnos Concluídos</span>
+                      <span className="text-xl font-black text-white">{Math.max(myCompletedCount, myReputation.count)}</span>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-bold text-white mb-0.5">Foto de Perfil / Logotipo</p>
-                      <label className="inline-block text-xs font-extrabold text-lime-400 cursor-pointer hover:underline">
-                        Toque aqui para alterar imagem...
-                        <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
-                      </label>
-                      {avatarFile ? (
-                        <p className="text-[10px] text-lime-400/80 mt-1 truncate max-w-[200px]">✓ {avatarFile.name} pronto</p>
-                      ) : (
-                        <p className="text-[10px] text-neutral-400 mt-1">Recomendado formato quadrado</p>
-                      )}
+                    <div className="bg-[#050505] border border-neutral-800 p-3.5 rounded-2xl">
+                      <span className="text-[11px] text-neutral-400 block">Avaliações Recebidas</span>
+                      <span className="text-xl font-black text-lime-400">{myReputation.count}</span>
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs text-neutral-400 mb-1">Nome</label>
-                      <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                  {myReputation.reviews.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-xs text-neutral-400 font-semibold">Últimos comentários recebidos:</p>
+                      {myReputation.reviews.slice(0, 3).map((rev) => (
+                        <div key={rev.id} className="bg-[#050505] border border-neutral-800/80 p-3 rounded-2xl text-xs space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-white">{rev.reviewer?.full_name || 'Usuário'}</span>
+                            <span className="text-lime-400 font-extrabold">{'★'.repeat(rev.rating)}</span>
+                          </div>
+                          {rev.comment && <p className="text-neutral-400">"{rev.comment}"</p>}
+                        </div>
+                      ))}
                     </div>
-                    <div>
-                      <label className="block text-xs text-neutral-400 mb-1">Telefone</label>
-                      <div className="flex gap-2">
-                        <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
-                          {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
-                        </select>
-                        <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                  )}
+                </section>
+
+                {/* DADOS CADASTRAIS */}
+                <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-5">
+                  <h2 className="text-lg font-bold text-white">Meus Dados Cadastrais</h2>
+                  <form onSubmit={handleUpdateProfile} className="space-y-4">
+                    <div className="flex items-center gap-4 bg-[#050505] p-4 rounded-2xl border border-neutral-800">
+                      <div className="relative group cursor-pointer">
+                        {avatarPreview ? (
+                          <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-lime-400 shadow-md" />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center text-xs text-neutral-400 border border-neutral-700 font-bold">Foto</div>
+                        )}
+                        <label className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-[10px] text-lime-400 font-extrabold text-center px-1">
+                          Alterar
+                          <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                        </label>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-bold text-white mb-0.5">Foto de Perfil / Logotipo</p>
+                        <label className="inline-block text-xs font-extrabold text-lime-400 cursor-pointer hover:underline">
+                          Toque aqui para alterar imagem...
+                          <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                        </label>
+                        {avatarFile ? (
+                          <p className="text-[10px] text-lime-400/80 mt-1 truncate max-w-[200px]">✓ {avatarFile.name} pronto</p>
+                        ) : (
+                          <p className="text-[10px] text-neutral-400 mt-1">Recomendado formato quadrado</p>
+                        )}
                       </div>
                     </div>
-                    {(profile?.role || role) === 'company' ? (
-                      <>
-                        <div>
-                          <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
-                          <input type="text" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-neutral-400 mb-1">Setor</label>
-                          <input type="text" value={sector} onChange={(e) => setSector(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs text-neutral-400 mb-1">Sobre a empresa</label>
-                          <textarea rows={2} value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <label className="block text-xs text-neutral-400 mb-1">CPF</label>
-                          <input type="text" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-neutral-400 mb-1">Idade</label>
-                          <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
-                            {AGE_OPTIONS.map((num) => <option key={num} value={num}>{num} anos</option>)}
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Nome</label>
+                        <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Telefone</label>
+                        <div className="flex gap-2">
+                          <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
+                            {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
                           </select>
+                          <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs text-neutral-400 mb-1">Distância máxima</label>
-                          <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
-                            <option value="Até 5 km (Mesmo bairro)">Até 5 km (Mesmo bairro)</option>
-                            <option value="Até 10 km">Até 10 km</option>
-                            <option value="Até 20 km">Até 20 km</option>
-                            <option value="Toda a cidade">Toda a cidade</option>
-                          </select>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs text-neutral-400 mb-1.5">Habilidades</label>
-                          <div className="flex flex-wrap gap-1.5 mb-2">
-                            {SKILL_OPTIONS.map((skill) => {
-                              const active = selectedSkills.includes(skill)
-                              return (
-                                <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-lime-400 border-lime-400 text-black font-bold' : 'bg-[#050505] border-neutral-800 text-neutral-400'}`}>
-                                  {active ? '✓ ' : '+ '}{skill}
-                                </button>
-                              )
-                            })}
+                      </div>
+                      {(profile?.role || role) === 'company' ? (
+                        <>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
+                            <input type="text" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
-                          <input type="text" placeholder="Outras..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2 text-xs text-white" />
-                        </div>
-                      </>
-                    )}
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Setor</label>
+                            <input type="text" value={sector} onChange={(e) => setSector(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs text-neutral-400 mb-1">Sobre a empresa</label>
+                            <textarea rows={2} value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">CPF</label>
+                            <input type="text" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Idade</label>
+                            <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
+                              {AGE_OPTIONS.map((num) => <option key={num} value={num}>{num} anos</option>)}
+                            </select>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs text-neutral-400 mb-1">Distância máxima</label>
+                            <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                              <option value="Até 5 km (Mesmo bairro)">Até 5 km (Mesmo bairro)</option>
+                              <option value="Até 10 km">Até 10 km</option>
+                              <option value="Até 20 km">Até 20 km</option>
+                              <option value="Toda a cidade">Toda a cidade</option>
+                            </select>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs text-neutral-400 mb-1.5">Habilidades</label>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {SKILL_OPTIONS.map((skill) => {
+                                const active = selectedSkills.includes(skill)
+                                return (
+                                  <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-lime-400 border-lime-400 text-black font-bold' : 'bg-[#050505] border-neutral-800 text-neutral-400'}`}>
+                                    {active ? '✓ ' : '+ '}{skill}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            <input type="text" placeholder="Outras..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2 text-xs text-white" />
+                          </div>
+                        </>
+                      )}
 
-                    <div>
-                      <label className="block text-xs text-neutral-400 mb-1">CEP</label>
-                      <input type="text" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">CEP</label>
+                        <input type="text" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Estado (UF)</label>
+                        <input type="text" value={stateUf} onChange={(e) => setStateUf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Cidade</label>
+                        <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Bairro</label>
+                        <input type="text" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-neutral-400 mb-1">Endereço</label>
+                        <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs text-neutral-400 mb-1">Estado (UF)</label>
-                      <input type="text" value={stateUf} onChange={(e) => setStateUf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-neutral-400 mb-1">Cidade</label>
-                      <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-neutral-400 mb-1">Bairro</label>
-                      <input type="text" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs text-neutral-400 mb-1">Endereço</label>
-                      <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                    </div>
-                  </div>
 
-                  <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
-                    {authLoading ? 'A guardar...' : 'Salvar Alterações'}
-                  </button>
-                </form>
-              </section>
+                    <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
+                      {authLoading ? 'A guardar...' : 'Salvar Alterações'}
+                    </button>
+                  </form>
+                </section>
+              </div>
             )}
           </>
         )}
       </main>
 
-      {selectedShiftModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
-          <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-3">
-                {selectedShiftModal.company?.avatar_url ? (
-                  <img src={selectedShiftModal.company.avatar_url} alt="Empresa" className="w-12 h-12 rounded-full object-cover border-2 border-black" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold">
-                    {(selectedShiftModal.company?.full_name || 'E')[0]}
+      {/* MODAL DETALHES DO TURNO + HISTÓRICO DA EMPRESA */}
+      {selectedShiftModal && (() => {
+        const compRep = getReputationStats(selectedShiftModal.company?.id)
+        return (
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
+            <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  {selectedShiftModal.company?.avatar_url ? (
+                    <img src={selectedShiftModal.company.avatar_url} alt="Empresa" className="w-12 h-12 rounded-full object-cover border-2 border-black" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold">
+                      {(selectedShiftModal.company?.full_name || 'E')[0]}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-extrabold text-black text-base">{selectedShiftModal.company?.full_name || 'Empresa'}</h3>
+                    <p className="text-xs font-extrabold text-amber-600">
+                      {compRep.avg ? `★ ${compRep.avg} • ${compRep.count} turnos avaliados` : 'Empresa recém-cadastrada'}
+                    </p>
+                    <p className="text-xs text-neutral-500">CNPJ: {selectedShiftModal.company?.cnpj || 'Não informado'}</p>
                   </div>
-                )}
-                <div>
-                  <h3 className="font-extrabold text-black text-base">{selectedShiftModal.company?.full_name || 'Empresa'}</h3>
-                  <p className="text-xs text-neutral-500">CNPJ: {selectedShiftModal.company?.cnpj || 'Não informado'}</p>
-                  <p className="text-xs font-bold text-[#4d7c0f]">📍 {selectedShiftModal.company?.city} - {selectedShiftModal.company?.state}</p>
                 </div>
-              </div>
-              <button onClick={() => setSelectedShiftModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
-            </div>
-
-            {selectedShiftModal.company?.bio && (
-              <div className="bg-neutral-100 p-3.5 rounded-2xl">
-                <p className="text-[11px] text-neutral-500 font-bold uppercase mb-1">Sobre a empresa</p>
-                <p className="text-xs text-neutral-800">{selectedShiftModal.company.bio}</p>
-              </div>
-            )}
-
-            <div className="space-y-3 border-t border-neutral-200 pt-3">
-              <div className="flex justify-between items-center">
-                <h4 className="font-extrabold text-black text-lg">{selectedShiftModal.title}</h4>
-                <span className="text-[#4d7c0f] font-black text-xl">R$ {Number(selectedShiftModal.pay_rate).toFixed(2).replace('.', ',')}</span>
+                <button onClick={() => setSelectedShiftModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                <div className="bg-neutral-100 p-3 rounded-2xl">
-                  <span className="text-neutral-500 block">Vagas</span>
-                  <span className="text-black font-bold">{selectedShiftModal.vacancies || 1}</span>
+              {selectedShiftModal.company?.bio && (
+                <div className="bg-neutral-100 p-3.5 rounded-2xl">
+                  <p className="text-[11px] text-neutral-500 font-bold uppercase mb-1">Sobre a empresa</p>
+                  <p className="text-xs text-neutral-800">{selectedShiftModal.company.bio}</p>
                 </div>
-                <div className="bg-neutral-100 p-3 rounded-2xl">
-                  <span className="text-neutral-500 block">Carga Horária</span>
-                  <span className="text-black font-bold">{selectedShiftModal.workload || 'A combinar'}</span>
-                </div>
-                <div className="bg-neutral-100 p-3 rounded-2xl">
-                  <span className="text-neutral-500 block">Transporte</span>
-                  <span className="text-black font-bold">{selectedShiftModal.transport_info || 'Não informado'}</span>
-                </div>
-                <div className="bg-neutral-100 p-3 rounded-2xl">
-                  <span className="text-neutral-500 block">Alimentação</span>
-                  <span className="text-black font-bold">{selectedShiftModal.meal_info || 'Não informado'}</span>
-                </div>
-              </div>
+              )}
 
-              <div className="bg-neutral-100 p-3.5 rounded-2xl text-xs space-y-1.5">
-                <p className="text-neutral-800">📅 <strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
-                <p className="text-neutral-800">📍 <strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
-                {selectedShiftModal.requirements && <p className="text-neutral-800 pt-1">📋 <strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
-              </div>
-            </div>
+              {compRep.reviews.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl space-y-1.5">
+                  <p className="text-[11px] font-extrabold text-amber-900 uppercase">Avaliações de Trabalhadores</p>
+                  {compRep.reviews.slice(0, 2).map((rev) => (
+                    <div key={rev.id} className="text-xs text-neutral-800">
+                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}</span> — "{rev.comment || 'Ótima empresa para trabalhar!'}"
+                    </div>
+                  ))}
+                </div>
+              )}
 
-            {(profile?.role || role) === 'worker' && selectedShiftModal.status === 'open' && (
-              <div className="pt-2">
-                {applications.some((a) => a.shift_id === selectedShiftModal.id) ? (
-                  <div className="w-full text-center py-3.5 rounded-2xl bg-black text-lime-400 text-xs font-extrabold">
-                    Você já se candidatou a este turno ✓
+              <div className="space-y-3 border-t border-neutral-200 pt-3">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-extrabold text-black text-lg">{selectedShiftModal.title}</h4>
+                  <span className="text-[#4d7c0f] font-black text-xl">R$ {Number(selectedShiftModal.pay_rate).toFixed(2).replace('.', ',')}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Vagas</span>
+                    <span className="text-black font-bold">{selectedShiftModal.vacancies || 1}</span>
                   </div>
-                ) : (
-                  <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-md">
-                    Confirmar Candidatura
-                  </button>
-                )}
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Carga Horária</span>
+                    <span className="text-black font-bold">{selectedShiftModal.workload || 'A combinar'}</span>
+                  </div>
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Transporte</span>
+                    <span className="text-black font-bold">{selectedShiftModal.transport_info || 'Não informado'}</span>
+                  </div>
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Alimentação</span>
+                    <span className="text-black font-bold">{selectedShiftModal.meal_info || 'Não informado'}</span>
+                  </div>
+                  <div className="col-span-2 bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Veículo</span>
+                    <span className="text-black font-bold">{selectedShiftModal.vehicle_required || 'Não exige veículo'}</span>
+                  </div>
+                </div>
+
+                <div className="bg-neutral-100 p-3.5 rounded-2xl text-xs space-y-1.5">
+                  <p className="text-neutral-800">📅 <strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
+                  <p className="text-neutral-800">📍 <strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
+                  {selectedShiftModal.requirements && <p className="text-neutral-800 pt-1">📋 <strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
+                </div>
               </div>
-            )}
+
+              {(profile?.role || role) === 'worker' && selectedShiftModal.status === 'open' && (
+                <div className="pt-2">
+                  {applications.some((a) => a.shift_id === selectedShiftModal.id) ? (
+                    <div className="w-full text-center py-3.5 rounded-2xl bg-black text-lime-400 text-xs font-extrabold">
+                      Você já se candidatou a este turno ✓
+                    </div>
+                  ) : (
+                    <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-md">
+                      Confirmar Candidatura
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
-      {selectedWorkerModal && selectedWorkerModal.worker && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
-          <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-3">
-                {selectedWorkerModal.worker.avatar_url ? (
-                  <img src={selectedWorkerModal.worker.avatar_url} alt="Candidato" className="w-14 h-14 rounded-full object-cover border-2 border-black" />
-                ) : (
-                  <div className="w-14 h-14 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold text-lg">
-                    {(selectedWorkerModal.worker.full_name || 'T')[0]}
+      {/* MODAL HISTÓRICO E FICHA DO TRABALHADOR */}
+      {selectedWorkerModal && selectedWorkerModal.worker && (() => {
+        const wRep = getReputationStats(selectedWorkerModal.worker.id)
+        return (
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
+            <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  {selectedWorkerModal.worker.avatar_url ? (
+                    <img src={selectedWorkerModal.worker.avatar_url} alt="Candidato" className="w-14 h-14 rounded-full object-cover border-2 border-black" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold text-lg">
+                      {(selectedWorkerModal.worker.full_name || 'T')[0]}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-extrabold text-black text-base">{selectedWorkerModal.worker.full_name}</h3>
+                    <p className="text-xs font-extrabold text-amber-600">
+                      {wRep.avg ? `★ ${wRep.avg} • ${wRep.count} turnos avaliados` : 'Primeiro turno na plataforma'}
+                    </p>
+                    <p className="text-xs text-neutral-600 font-medium">
+                      {selectedWorkerModal.worker.age ? `${selectedWorkerModal.worker.age} anos` : ''} • {selectedWorkerModal.worker.city}/{selectedWorkerModal.worker.state}
+                    </p>
                   </div>
-                )}
-                <div>
-                  <h3 className="font-extrabold text-black text-base">{selectedWorkerModal.worker.full_name}</h3>
-                  <p className="text-xs text-neutral-600 font-medium">
-                    {selectedWorkerModal.worker.age ? `${selectedWorkerModal.worker.age} anos` : ''} • {selectedWorkerModal.worker.city}/{selectedWorkerModal.worker.state}
-                  </p>
-                  <p className="text-xs font-bold text-[#4d7c0f]">CPF: {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
+                </div>
+                <button onClick={() => setSelectedWorkerModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
+              </div>
+
+              <div className="space-y-2 text-xs bg-neutral-100 p-4 rounded-2xl">
+                <p className="text-neutral-800">🪪 <strong>CPF:</strong> {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
+                <p className="text-neutral-800">📞 <strong>WhatsApp:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
+                <p className="text-neutral-800">📍 <strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
+                <p className="text-neutral-800">🚗 <strong>Raio:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
+                <p className="text-neutral-800">🛠 <strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
+              </div>
+
+              {wRep.reviews.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl space-y-1.5">
+                  <p className="text-[11px] font-extrabold text-amber-900 uppercase">Histórico de Avaliações</p>
+                  {wRep.reviews.slice(0, 3).map((rev) => (
+                    <div key={rev.id} className="text-xs text-neutral-800">
+                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}</span> ({rev.reviewer?.full_name || 'Empresa'}): "{rev.comment || 'Excelente profissional!'}"
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {selectedWorkerModal.status === 'pending' && (
+                <div className="flex gap-2 pt-2">
+                  <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'accepted')} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl">
+                    Aceitar Candidato ✓
+                  </button>
+                  <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'rejected')} className="flex-1 bg-neutral-200 hover:bg-red-100 hover:text-red-700 text-neutral-700 text-xs font-bold py-3.5 rounded-2xl">
+                    Recusar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* MODAL DE AVALIAÇÃO MÚTUA APÓS TÉRMINO */}
+      {reviewModalApp && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setReviewModalApp(null)}>
+          <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center">
+              <h3 className="font-extrabold text-black text-lg">Avaliar Experiência</h3>
+              <button onClick={() => setReviewModalApp(null)} className="w-8 h-8 rounded-full bg-neutral-100 text-black font-bold flex items-center justify-center">✕</button>
+            </div>
+            <p className="text-xs text-neutral-600">
+              Turno: <strong>{reviewModalApp.shift?.title}</strong>. Sua avaliação aparece no histórico público e ajuda a manter a qualidade do TurnLevel.
+            </p>
+            <form onSubmit={handleSubmitReview} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-2">Nota (1 a 5 estrelas)</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      type="button"
+                      key={star}
+                      onClick={() => setReviewRating(star)}
+                      className={`flex-1 py-3 rounded-2xl font-extrabold text-base border transition ${reviewRating >= star ? 'bg-lime-400 border-black text-black' : 'bg-neutral-100 border-neutral-200 text-neutral-400'}`}
+                    >
+                      ★ {star}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <button onClick={() => setSelectedWorkerModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
-            </div>
-
-            <div className="space-y-2 text-xs bg-neutral-100 p-4 rounded-2xl">
-              <p className="text-neutral-800">📞 <strong>WhatsApp / Telefone:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
-              <p className="text-neutral-800">📍 <strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
-              <p className="text-neutral-800">🚗 <strong>Raio de Deslocamento:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
-              <p className="text-neutral-800">🛠 <strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
-            </div>
-
-            {selectedWorkerModal.status === 'pending' && (
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'accepted')} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl">
-                  Aceitar Candidato ✓
-                </button>
-                <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'rejected')} className="flex-1 bg-neutral-200 hover:bg-red-100 hover:text-red-700 text-neutral-700 text-xs font-bold py-3.5 rounded-2xl">
-                  Recusar
-                </button>
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">Comentário (opcional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="Pontualidade, pagamento em dia, ambiente de trabalho..."
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  className="w-full bg-neutral-100 border border-neutral-300 rounded-2xl p-3 text-xs text-black outline-none focus:border-black"
+                />
               </div>
-            )}
+              <button
+                type="submit"
+                disabled={submittingReview}
+                className="w-full bg-black hover:bg-neutral-800 text-lime-400 font-extrabold text-sm py-3.5 rounded-2xl transition"
+              >
+                {submittingReview ? 'Enviando...' : 'Enviar Avaliação ✓'}
+              </button>
+            </form>
           </div>
         </div>
       )}
@@ -1411,13 +1772,13 @@ export default function App() {
             Turnos
           </button>
           <button
-            onClick={() => { setActiveTab('applications'); fetchApplications(profile) }}
+            onClick={() => { setActiveTab('applications'); fetchApplications(profile); fetchAllReviews() }}
             className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'applications' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
           >
             {(profile?.role || role) === 'company' ? 'Candidatos' : 'Candidaturas'}
           </button>
           <button
-            onClick={() => setActiveTab('profile')}
+            onClick={() => { setActiveTab('profile'); fetchAllReviews() }}
             className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'profile' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
           >
             Perfil
