@@ -1,0 +1,15 @@
+{
+  "name": "TurnLevel",
+  "short_name": "TurnLevel",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#A3E635",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
+    }
+  ]
+}
