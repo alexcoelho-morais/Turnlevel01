@@ -114,6 +114,8 @@ export default function App() {
   const [city, setCity] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
   const [address, setAddress] = useState('')
+  const [latitude, setLatitude] = useState(null)
+  const [longitude, setLongitude] = useState(null)
 
   const [shifts, setShifts] = useState([])
   const [applications, setApplications] = useState([])
@@ -217,6 +219,8 @@ export default function App() {
     setCity(prof.city || '')
     setNeighborhood(prof.neighborhood || '')
     setAddress(prof.address || '')
+    setLatitude(prof.latitude ?? null)
+    setLongitude(prof.longitude ?? null)
 
     if (prof.role === 'company') {
       setShiftNeighborhood(prof.neighborhood || '')
@@ -238,6 +242,12 @@ export default function App() {
     return combined.join(', ')
   }
 
+  function buildWhatsappE164(rawDdd, rawPhone) {
+    const cleanPhone = (rawPhone || '').replace(/\D/g, '')
+    const cleanDdd = (rawDdd || '62').replace(/\D/g, '')
+    return cleanPhone ? `55${cleanDdd}${cleanPhone}` : null
+  }
+
   async function handleCepLookup(rawCep) {
     const clean = rawCep.replace(/\D/g, '')
     setCep(rawCep)
@@ -246,13 +256,31 @@ export default function App() {
         const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`)
         const data = await res.json()
         if (!data.erro) {
-          setStateUf(data.uf || '')
-          setCity(data.localidade || '')
-          setNeighborhood(data.bairro || '')
-          setAddress(data.logradouro || '')
+          const uf = data.uf || ''
+          const loc = data.localidade || ''
+          const bairro = data.bairro || ''
+          const rua = data.logradouro || ''
+
+          setStateUf(uf)
+          setCity(loc)
+          setNeighborhood(bairro)
+          setAddress(rua)
+
+          const query = encodeURIComponent(
+            `${rua ? rua + ', ' : ''}${bairro ? bairro + ', ' : ''}${loc}, ${uf}, Brasil`
+          )
+          const geoRes = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${query}`,
+            { headers: { 'Accept-Language': 'pt-BR' } }
+          )
+          const geoData = await geoRes.json()
+          if (Array.isArray(geoData) && geoData[0]) {
+            setLatitude(parseFloat(geoData[0].lat))
+            setLongitude(parseFloat(geoData[0].lon))
+          }
         }
       } catch (err) {
-        console.error('Erro CEP:', err)
+        console.error('Erro CEP/Geolocalização:', err)
       }
     }
   }
@@ -302,6 +330,7 @@ export default function App() {
     if (userId) {
       const uploadedUrl = await uploadAvatar(userId)
       const finalSkills = buildFinalSkillsString()
+      const whatsappE164 = buildWhatsappE164(phoneDdd, phone)
 
       const profilePayload = {
         id: userId,
@@ -309,6 +338,7 @@ export default function App() {
         role,
         phone_ddd: phoneDdd,
         phone,
+        whatsapp_e164: whatsappE164,
         bio,
         avatar_url: uploadedUrl,
         cnpj: role === 'company' ? cnpj : null,
@@ -321,7 +351,9 @@ export default function App() {
         state: stateUf,
         city,
         neighborhood,
-        address
+        address,
+        latitude,
+        longitude
       }
 
       await supabase.from('profiles').upsert(profilePayload)
@@ -345,6 +377,7 @@ export default function App() {
     const uploadedUrl = await uploadAvatar(session.user.id)
     const finalSkills = buildFinalSkillsString()
     const currentRole = profile?.role || role
+    const whatsappE164 = buildWhatsappE164(phoneDdd, phone)
 
     const updates = {
       id: session.user.id,
@@ -352,6 +385,7 @@ export default function App() {
       full_name: fullName,
       phone_ddd: phoneDdd,
       phone,
+      whatsapp_e164: whatsappE164,
       bio,
       avatar_url: uploadedUrl,
       cnpj: currentRole === 'company' ? cnpj : null,
@@ -364,7 +398,9 @@ export default function App() {
       state: stateUf,
       city,
       neighborhood,
-      address
+      address,
+      latitude: latitude ?? profile?.latitude ?? null,
+      longitude: longitude ?? profile?.longitude ?? null
     }
 
     const { error } = await supabase.from('profiles').upsert(updates)
@@ -649,10 +685,10 @@ export default function App() {
           ) : (
             <div className="space-y-3 text-xs text-neutral-300 leading-relaxed">
               <p>
-                Coletamos apenas informações necessárias para o funcionamento do <strong className="text-white">TurnLevel</strong>: dados de perfil, telefone/WhatsApp e localização (CEP, bairro, cidade e raio de deslocamento).
+                Coletamos apenas informações necessárias para o funcionamento do <strong className="text-white">TurnLevel</strong>: dados de perfil, telefone/WhatsApp e localização (CEP, bairro, cidade, coordenadas e raio de deslocamento).
               </p>
               <p>
-                A localização é utilizada para filtrar turnos próximos e viabilizar alertas de vagas na sua região (como raio de até 20 km).
+                A localização é utilizada para filtrar turnos próximos e viabilizar alertas de vagas na sua região (raio de até 20 km).
               </p>
               <p>
                 Não vendemos seus dados pessoais a terceiros. Você pode atualizar seus dados na aba Perfil ou solicitar a exclusão da conta pelos canais oficiais.
