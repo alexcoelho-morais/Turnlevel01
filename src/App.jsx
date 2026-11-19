@@ -88,6 +88,9 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
 
+  // Modal de Termos / Privacidade ('terms' | 'privacy' | null)
+  const [legalModal, setLegalModal] = useState(null)
+
   const [role, setRole] = useState('worker')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -323,7 +326,6 @@ export default function App() {
 
       await supabase.from('profiles').upsert(profilePayload)
 
-      // Se o Supabase estiver configurado para exigir confirmação de e-mail, session virá null
       if (!signUpData.session) {
         setAuthView('verify_email')
         setAuthLoading(false)
@@ -518,10 +520,10 @@ export default function App() {
     ])
 
     if (error) {
-      if (error.code === '23505') alert('Você já se candidatou a este turno!')
+      if (error.code === '23505') alert('Você já se candidatou a este turno.')
       else alert('Erro: ' + error.message)
     } else {
-      alert('Candidatura enviada com sucesso!')
+      alert('Candidatura enviada com sucesso.')
       setSelectedShiftModal(null)
       fetchApplications(profile)
     }
@@ -575,13 +577,99 @@ export default function App() {
 
     setSubmittingReview(false)
     if (error) {
-      if (error.code === '23505') alert('Você já avaliou este turno!')
+      if (error.code === '23505') alert('Você já avaliou este turno.')
       else alert('Erro ao enviar avaliação: ' + error.message)
     } else {
-      alert('Avaliação registrada com sucesso! Obrigado por fortalecer a comunidade TurnLevel.')
+      alert('Avaliação registrada com sucesso.')
       setReviewModalApp(null)
       fetchAllReviews()
     }
+  }
+
+  const renderLegalFooter = () => (
+    <div className="text-center pb-2 pt-4 relative z-10 space-y-1">
+      <div className="flex items-center justify-center gap-4 text-[11px] text-neutral-400">
+        <button
+          type="button"
+          onClick={() => setLegalModal('terms')}
+          className="hover:text-lime-400 underline underline-offset-2 transition"
+        >
+          Termos de Uso
+        </button>
+        <span>•</span>
+        <button
+          type="button"
+          onClick={() => setLegalModal('privacy')}
+          className="hover:text-lime-400 underline underline-offset-2 transition"
+        >
+          Política de Privacidade
+        </button>
+      </div>
+      <p className="text-[11px] text-neutral-500">TurnLevel © 2026 • Todos os direitos reservados</p>
+    </div>
+  )
+
+  const renderLegalModal = () => {
+    if (!legalModal) return null
+    const isTerms = legalModal === 'terms'
+    return (
+      <div
+        className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={() => setLegalModal(null)}
+      >
+        <div
+          className="bg-[#111111] border border-neutral-800 text-white rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex justify-between items-center border-b border-neutral-800 pb-3">
+            <h3 className="font-extrabold text-white text-base">
+              {isTerms ? 'Termos de Uso' : 'Política de Privacidade'}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setLegalModal(null)}
+              className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+
+          {isTerms ? (
+            <div className="space-y-3 text-xs text-neutral-300 leading-relaxed">
+              <p>
+                O <strong className="text-white">TurnLevel</strong> conecta empresas com demanda de turnos pontuais a trabalhadores disponíveis na região.
+              </p>
+              <p>
+                A definição de valores, horários, benefícios e condições operacionais do turno é de responsabilidade direta das partes envolvidas.
+              </p>
+              <p>
+                Ao usar a plataforma, você concorda em fornecer dados verdadeiros e manter conduta respeitosa nas candidaturas e avaliações após o serviço.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 text-xs text-neutral-300 leading-relaxed">
+              <p>
+                Coletamos apenas informações necessárias para o funcionamento do <strong className="text-white">TurnLevel</strong>: dados de perfil, telefone/WhatsApp e localização (CEP, bairro, cidade e raio de deslocamento).
+              </p>
+              <p>
+                A localização é utilizada para filtrar turnos próximos e viabilizar alertas de vagas na sua região (como raio de até 20 km).
+              </p>
+              <p>
+                Não vendemos seus dados pessoais a terceiros. Você pode atualizar seus dados na aba Perfil ou solicitar a exclusão da conta pelos canais oficiais.
+              </p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setLegalModal(null)}
+            className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3 rounded-xl transition"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!session) {
@@ -638,7 +726,7 @@ export default function App() {
               <div className="bg-[#111111]/90 backdrop-blur-md border border-neutral-800 rounded-3xl p-5 shadow-2xl space-y-4">
                 <div className="space-y-1.5">
                   <div className="inline-flex items-center gap-1.5 bg-lime-400/15 text-lime-400 border border-lime-400/30 px-3 py-1 rounded-full">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider">✓ Cadastro 100% Gratuito</span>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Cadastro 100% Gratuito</span>
                   </div>
                   <h1 className="text-xl font-extrabold text-white pt-1 leading-snug">
                     Ganhe por turno trabalhado ou complete sua equipe em minutos.
@@ -758,12 +846,12 @@ export default function App() {
           {/* TELA DE CONFIRMAÇÃO DE E-MAIL */}
           {authView === 'verify_email' && (
             <div className="bg-[#111111]/95 backdrop-blur-md border border-lime-400/40 rounded-3xl p-6 shadow-2xl text-center space-y-4">
-              <div className="w-14 h-14 rounded-2xl bg-lime-400/15 border border-lime-400 text-lime-400 flex items-center justify-center mx-auto text-2xl">
-                ✉️
+              <div className="w-12 h-12 rounded-2xl bg-lime-400/15 border border-lime-400 text-lime-400 flex items-center justify-center mx-auto text-sm font-extrabold">
+                OK
               </div>
               <h2 className="text-lg font-extrabold text-white">Confirme seu e-mail</h2>
               <p className="text-xs text-neutral-300 leading-relaxed">
-                Enviamos um link de ativação para <strong className="text-lime-400">{email}</strong>. Abra sua caixa de entrada (ou spam) e clique no link para liberar seu acesso.
+                Enviamos um link de ativação para <strong className="text-lime-400">{email}</strong>. Abra sua caixa de entrada ou spam e clique no link para liberar seu acesso.
               </p>
               <button
                 type="button"
@@ -877,7 +965,7 @@ export default function App() {
                     <>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
-                        <input type="text" required placeholder="00.000.000/0001-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <input type="text" inputMode="numeric" required placeholder="00.000.000/0001-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Telefone / WhatsApp</label>
@@ -885,7 +973,7 @@ export default function App() {
                           <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                             {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
                           </select>
-                          <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          <input type="tel" inputMode="numeric" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                       </div>
                       <div>
@@ -898,7 +986,7 @@ export default function App() {
                       <div className="grid grid-cols-3 gap-2">
                         <div className="col-span-2">
                           <label className="block text-xs text-neutral-400 mb-1">CPF</label>
-                          <input type="text" required placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          <input type="text" inputMode="numeric" required placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                         <div>
                           <label className="block text-xs text-neutral-400 mb-1">Idade</label>
@@ -913,7 +1001,7 @@ export default function App() {
                           <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                             {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
                           </select>
-                          <input type="text" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          <input type="tel" inputMode="numeric" required placeholder="99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                       </div>
                       <div>
@@ -944,7 +1032,7 @@ export default function App() {
                 <form onSubmit={handleCompleteSignup} className="space-y-3">
                   <h3 className="text-sm font-bold text-white">Localização e Proximidade</h3>
                   <div className="grid grid-cols-2 gap-2">
-                    <input type="text" required placeholder="CEP" maxLength={9} value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                    <input type="text" inputMode="numeric" required placeholder="CEP" maxLength={9} value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                     <input type="text" required placeholder="UF" maxLength={2} value={stateUf} onChange={(e) => setStateUf(e.target.value.toUpperCase())} className="bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -979,9 +1067,8 @@ export default function App() {
           )}
         </div>
 
-        <div className="text-center pb-2 pt-4 relative z-10">
-          <p className="text-[11px] text-neutral-500">TurnLevel © 2026 • Todos os direitos reservados</p>
-        </div>
+        {renderLegalFooter()}
+        {renderLegalModal()}
       </div>
     )
   }
@@ -1057,7 +1144,7 @@ export default function App() {
                       </div>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Valor (R$)</label>
-                        <input type="number" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <input type="number" inputMode="decimal" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Data</label>
@@ -1083,9 +1170,9 @@ export default function App() {
                         <label className="block text-xs text-neutral-400 mb-1">Exigência de Veículo (Moto ou Carro)</label>
                         <select value={vehicleRequired} onChange={(e) => setVehicleRequired(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white">
                           <option value="Não exige veículo">Não exige veículo</option>
-                          <option value="Moto própria obrigatória">🏍️ Moto própria obrigatória</option>
-                          <option value="Carro próprio obrigatório">🚗 Carro próprio obrigatório</option>
-                          <option value="Moto ou Carro próprio">🏍️/🚗 Moto ou Carro próprio</option>
+                          <option value="Moto própria obrigatória">Moto própria obrigatória</option>
+                          <option value="Carro próprio obrigatório">Carro próprio obrigatório</option>
+                          <option value="Moto ou Carro próprio">Moto ou Carro próprio</option>
                         </select>
                       </div>
                       <div>
@@ -1111,7 +1198,7 @@ export default function App() {
                 <section className="bg-[#111111] border border-neutral-800 rounded-2xl p-3.5 space-y-2.5">
                   <div className="flex flex-wrap gap-2 items-center">
                     <div className="flex-1 min-w-[160px] flex items-center gap-2 bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5">
-                      <span className="text-lime-400 text-xs">📍</span>
+                      <span className="w-2 h-2 rounded-full bg-lime-400 shrink-0" />
                       <input
                         type="text"
                         value={cityFilter}
@@ -1208,8 +1295,8 @@ export default function App() {
                                     {compRep.avg ? `★ ${compRep.avg} (${compRep.count})` : 'Nova empresa'}
                                   </span>
                                 </div>
-                                <p className="text-xs text-neutral-600 font-medium">📍 {shift.location}</p>
-                                <p className="text-xs text-neutral-500">📅 {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}</p>
+                                <p className="text-xs text-neutral-600 font-medium">Local: {shift.location}</p>
+                                <p className="text-xs text-neutral-500">Data: {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}</p>
                               </div>
                             </div>
 
@@ -1296,14 +1383,14 @@ export default function App() {
                                     <p className="text-xs font-extrabold text-amber-600">
                                       {workerRep.avg ? `★ ${workerRep.avg} (${workerRep.count} avaliações)` : 'Novo no TurnLevel'}
                                     </p>
-                                    <p className="text-xs text-neutral-600 font-medium">📍 {app.worker?.neighborhood}, {app.worker?.city}</p>
+                                    <p className="text-xs text-neutral-600 font-medium">{app.worker?.neighborhood}, {app.worker?.city}</p>
                                     <p className="text-[11px] text-neutral-500 underline mt-0.5">Toque para ver histórico e ficha</p>
                                   </div>
                                 </div>
                               ) : (
                                 <div className="mt-1.5">
                                   <h3 className="font-extrabold text-black text-base">{app.shift?.company?.full_name}</h3>
-                                  <p className="text-xs text-neutral-600 font-medium">📍 {app.shift?.location}</p>
+                                  <p className="text-xs text-neutral-600 font-medium">{app.shift?.location}</p>
                                 </div>
                               )}
                             </div>
@@ -1318,21 +1405,21 @@ export default function App() {
                             <div className="pt-2 space-y-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
                               {isCompany && workerPhone ? (
                                 <a
-                                  href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20o%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel!%20Vamos%20alinhar%20os%20detalhes?`}
+                                  href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20o%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel.%20Vamos%20alinhar%20os%20detalhes?`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
                                 >
-                                  💬 Chamar Trabalhador no WhatsApp
+                                  Chamar Trabalhador no WhatsApp
                                 </a>
                               ) : !isCompany && companyPhone ? (
                                 <a
-                                  href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20no%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel!`}
+                                  href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20no%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel.`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
                                 >
-                                  💬 Falar com a Empresa no WhatsApp
+                                  Falar com a Empresa no WhatsApp
                                 </a>
                               ) : null}
 
@@ -1353,14 +1440,14 @@ export default function App() {
                                     <a
                                       href={`https://wa.me/${isCompany ? workerPhone : companyPhone}?text=${encodeURIComponent(
                                         isCompany
-                                          ? `Olá ${app.worker?.full_name || ''}! Confirmamos o término do seu turno de ${app.shift?.title || ''} pelo TurnLevel. Por favor, acesse o app para confirmar e deixar sua avaliação sobre nossa empresa!`
-                                          : `Olá ${app.shift?.company?.full_name || ''}! Finalizei o turno de ${app.shift?.title || ''} pelo TurnLevel. Já confirmei no app, aguardo sua confirmação e avaliação!`
+                                          ? `Olá ${app.worker?.full_name || ''}! Confirmamos o término do seu turno de ${app.shift?.title || ''} pelo TurnLevel. Acesse o app para confirmar e deixar sua avaliação sobre nossa empresa.`
+                                          : `Olá ${app.shift?.company?.full_name || ''}! Finalizei o turno de ${app.shift?.title || ''} pelo TurnLevel. Já confirmei no app, aguardo sua confirmação e avaliação.`
                                       )}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="flex items-center justify-center gap-1.5 w-full bg-neutral-200 hover:bg-neutral-300 text-black text-xs font-bold py-3 rounded-2xl transition"
                                     >
-                                      📲 Notificar Término no WhatsApp
+                                      Notificar Término no WhatsApp
                                     </a>
                                   )}
                                 </div>
@@ -1465,14 +1552,14 @@ export default function App() {
                           <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
                             {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
                           </select>
-                          <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          <input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                       </div>
                       {(profile?.role || role) === 'company' ? (
                         <>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
-                            <input type="text" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                            <input type="text" inputMode="numeric" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">Setor</label>
@@ -1487,7 +1574,7 @@ export default function App() {
                         <>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">CPF</label>
-                            <input type="text" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                            <input type="text" inputMode="numeric" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">Idade</label>
@@ -1523,7 +1610,7 @@ export default function App() {
 
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">CEP</label>
-                        <input type="text" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <input type="text" inputMode="numeric" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Estado (UF)</label>
@@ -1548,6 +1635,8 @@ export default function App() {
                     </button>
                   </form>
                 </section>
+
+                {renderLegalFooter()}
               </div>
             )}
           </>
@@ -1592,7 +1681,7 @@ export default function App() {
                   <p className="text-[11px] font-extrabold text-amber-900 uppercase">Avaliações de Trabalhadores</p>
                   {compRep.reviews.slice(0, 2).map((rev) => (
                     <div key={rev.id} className="text-xs text-neutral-800">
-                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}</span> — "{rev.comment || 'Ótima empresa para trabalhar!'}"
+                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}:</span> "{rev.comment || 'Ótima empresa para trabalhar.'}"
                     </div>
                   ))}
                 </div>
@@ -1628,9 +1717,9 @@ export default function App() {
                 </div>
 
                 <div className="bg-neutral-100 p-3.5 rounded-2xl text-xs space-y-1.5">
-                  <p className="text-neutral-800">📅 <strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
-                  <p className="text-neutral-800">📍 <strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
-                  {selectedShiftModal.requirements && <p className="text-neutral-800 pt-1">📋 <strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
+                  <p className="text-neutral-800"><strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
+                  <p className="text-neutral-800"><strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
+                  {selectedShiftModal.requirements && <p className="text-neutral-800 pt-1"><strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
                 </div>
               </div>
 
@@ -1681,11 +1770,11 @@ export default function App() {
               </div>
 
               <div className="space-y-2 text-xs bg-neutral-100 p-4 rounded-2xl">
-                <p className="text-neutral-800">🪪 <strong>CPF:</strong> {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
-                <p className="text-neutral-800">📞 <strong>WhatsApp:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
-                <p className="text-neutral-800">📍 <strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
-                <p className="text-neutral-800">🚗 <strong>Raio:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
-                <p className="text-neutral-800">🛠 <strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
+                <p className="text-neutral-800"><strong>CPF:</strong> {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
+                <p className="text-neutral-800"><strong>WhatsApp:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
+                <p className="text-neutral-800"><strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
+                <p className="text-neutral-800"><strong>Raio:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
+                <p className="text-neutral-800"><strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
               </div>
 
               {wRep.reviews.length > 0 && (
@@ -1693,7 +1782,7 @@ export default function App() {
                   <p className="text-[11px] font-extrabold text-amber-900 uppercase">Histórico de Avaliações</p>
                   {wRep.reviews.slice(0, 3).map((rev) => (
                     <div key={rev.id} className="text-xs text-neutral-800">
-                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}</span> ({rev.reviewer?.full_name || 'Empresa'}): "{rev.comment || 'Excelente profissional!'}"
+                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}</span> ({rev.reviewer?.full_name || 'Empresa'}): "{rev.comment || 'Excelente profissional.'}"
                     </div>
                   ))}
                 </div>
@@ -1762,6 +1851,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {renderLegalModal()}
 
       <nav className="fixed bottom-0 inset-x-0 bg-[#050505]/95 backdrop-blur-md border-t border-neutral-900 px-4 py-2.5 z-20">
         <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
