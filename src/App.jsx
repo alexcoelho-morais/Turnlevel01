@@ -1,6 +1,20 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
+const VAPID_PUBLIC_KEY =
+  'BKVSS2H3oGVbJKXVePdGR8R6pB_oTDV-XkP14Q_OnTVh5UU01G_e_9RcFXnDBDQP1o-ev29WksUG5wOJSN2PMxQ'
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
+}
+
 const BRAZIL_DDDS = [
   '11', '12', '13', '14', '15', '16', '17', '18', '19',
   '21', '22', '24', '27', '28',
@@ -80,6 +94,10 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [activeTab, setActiveTab] = useState('shifts')
+
+  // Estado das notificações Web Push
+  const [pushLoading, setPushLoading] = useState(false)
+  const [pushStatus, setPushStatus] = useState('')
 
   // 'welcome', 'login', 'signup', 'verify_email'
   const [authView, setAuthView] = useState('welcome')
@@ -165,6 +183,80 @@ export default function App() {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (session && 'serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.pushManager.getSubscription())
+        .then((sub) => {
+          if (sub) setPushStatus('Notificações ativas neste dispositivo ✓')
+        })
+        .catch(() => {})
+    }
+  }, [session])
+
+  async function handleActivatePushNotifications() {
+    if (!session?.user?.id) return
+
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert('Este navegador não suporta notificações push. No iPhone, adicione o TurnLevel à Tela de Início primeiro.')
+      return
+    }
+
+    setPushLoading(true)
+    setPushStatus('')
+
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        setPushStatus('Permissão de notificação negada.')
+        alert('Ative as notificações nas configurações do aparelho para receber alertas de vagas.')
+        setPushLoading(false)
+        return
+      }
+
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      await navigator.serviceWorker.ready
+
+      const existingSub = await registration.pushManager.getSubscription()
+      const subscription =
+        existingSub ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        }))
+
+      const subJson = subscription.toJSON()
+      const endpoint = subJson.endpoint
+      const p256dh = subJson.keys?.p256dh
+      const auth = subJson.keys?.auth
+
+      if (!endpoint || !p256dh || !auth) {
+        throw new Error('Dados da subscrição push incompletos.')
+      }
+
+      const { error } = await supabase.from('push_subscriptions').upsert(
+        {
+          user_id: session.user.id,
+          endpoint,
+          p256dh,
+          auth
+        },
+        { onConflict: 'endpoint' }
+      )
+
+      if (error) throw error
+
+      setPushStatus('Notificações ativas neste dispositivo ✓')
+      alert('Alertas de vagas no raio de 20 km ativados com sucesso!')
+    } catch (err) {
+      console.error('Erro ao ativar push:', err)
+      setPushStatus('Erro ao ativar notificações.')
+      alert('Erro ao ativar notificações: ' + (err.message || 'Tente novamente.'))
+    }
+
+    setPushLoading(false)
+  }
 
   async function loadUserData(userId) {
     setLoadingProfile(true)
@@ -1511,6 +1603,36 @@ export default function App() {
 
             {activeTab === 'profile' && (
               <div className="space-y-6">
+                {/* CARTÃO DE ALERTAS PUSH (20 KM) PARA TRABALHADOR */}
+                {(profile?.role || role) === 'worker' && (
+                  <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-base font-bold text-white">Alertas de Vagas (Raio de 20 km)</h2>
+                        <p className="text-xs text-neutral-400">
+                          Receba notificações gratuitas no aparelho quando novas vagas surgirem perto de você.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-extrabold bg-lime-400/15 text-lime-400 border border-lime-400/30 px-2.5 py-1 rounded-full shrink-0">
+                        Grátis
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleActivatePushNotifications}
+                      disabled={pushLoading}
+                      className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]"
+                    >
+                      {pushLoading ? 'Ativando notificações...' : '🔔 Ativar Notificações de Vagas (20 km)'}
+                    </button>
+
+                    {pushStatus && (
+                      <p className="text-xs font-semibold text-lime-400">{pushStatus}</p>
+                    )}
+                  </section>
+                )}
+
                 {/* CARTÃO DE HISTÓRICO E REPUTAÇÃO DO USUÁRIO */}
                 <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-4">
                   <div className="flex items-center justify-between">
