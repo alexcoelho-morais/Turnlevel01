@@ -95,18 +95,16 @@ export default function App() {
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [activeTab, setActiveTab] = useState('shifts')
 
-  // Estado das notificações Web Push
   const [pushLoading, setPushLoading] = useState(false)
   const [pushStatus, setPushStatus] = useState('')
+  const [pushEnabled, setPushEnabled] = useState(false)
 
-  // 'welcome', 'login', 'signup', 'verify_email'
   const [authView, setAuthView] = useState('welcome')
   const [howItWorksTab, setHowItWorksTab] = useState('worker')
   const [signupStep, setSignupStep] = useState(1)
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
 
-  // Modal de Termos / Privacidade ('terms' | 'privacy' | null)
   const [legalModal, setLegalModal] = useState(null)
 
   const [role, setRole] = useState('worker')
@@ -145,13 +143,11 @@ export default function App() {
   const [selectedShiftModal, setSelectedShiftModal] = useState(null)
   const [selectedWorkerModal, setSelectedWorkerModal] = useState(null)
 
-  // Modal de Avaliação Mútua
   const [reviewModalApp, setReviewModalApp] = useState(null)
   const [reviewRating, setReviewRating] = useState(5)
   const [reviewComment, setReviewComment] = useState('')
   const [submittingReview, setSubmittingReview] = useState(false)
 
-  // Formulário de Publicação de Turno
   const [title, setTitle] = useState('')
   const [vacancies, setVacancies] = useState('1')
   const [workload, setWorkload] = useState('6 horas')
@@ -189,7 +185,10 @@ export default function App() {
       navigator.serviceWorker.ready
         .then((reg) => reg.pushManager.getSubscription())
         .then((sub) => {
-          if (sub) setPushStatus('Notificações ativas neste dispositivo ✓')
+          if (sub) {
+            setPushEnabled(true)
+            setPushStatus('Notificações ativas neste dispositivo ✓')
+          }
         })
         .catch(() => {})
     }
@@ -247,6 +246,7 @@ export default function App() {
 
       if (error) throw error
 
+      setPushEnabled(true)
       setPushStatus('Notificações ativas neste dispositivo ✓')
       alert('Alertas de vagas no raio de 20 km ativados com sucesso!')
     } catch (err) {
@@ -836,7 +836,6 @@ export default function App() {
 
           {authView === 'welcome' && (
             <div className="space-y-4">
-              {/* FAIXA FLUÍDA EM MOVIMENTO */}
               <div className="overflow-hidden rounded-full bg-[#111111]/90 border border-neutral-800/80 py-2 px-1">
                 <div className="animate-marquee gap-6 text-[11px] font-bold text-neutral-300">
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Cadastro 100% Gratuito</span>
@@ -850,7 +849,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* PROPOSTA DE VALOR + ESCOLHA DE PERFIL */}
               <div className="bg-[#111111]/90 backdrop-blur-md border border-neutral-800 rounded-3xl p-5 shadow-2xl space-y-4">
                 <div className="space-y-1.5">
                   <div className="inline-flex items-center gap-1.5 bg-lime-400/15 text-lime-400 border border-lime-400/30 px-3 py-1 rounded-full">
@@ -914,7 +912,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* COMO FUNCIONA PARA CADA PÚBLICO */}
               <div className="bg-[#111111]/85 backdrop-blur-sm border border-neutral-800/90 rounded-3xl p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-extrabold uppercase tracking-wider text-neutral-300">Como funciona na prática</h2>
@@ -971,7 +968,6 @@ export default function App() {
             </div>
           )}
 
-          {/* TELA DE CONFIRMAÇÃO DE E-MAIL */}
           {authView === 'verify_email' && (
             <div className="bg-[#111111]/95 backdrop-blur-md border border-lime-400/40 rounded-3xl p-6 shadow-2xl text-center space-y-4">
               <div className="w-12 h-12 rounded-2xl bg-lime-400/15 border border-lime-400 text-lime-400 flex items-center justify-center mx-auto text-sm font-extrabold">
@@ -991,7 +987,6 @@ export default function App() {
             </div>
           )}
 
-          {/* TELA DE LOGIN */}
           {authView === 'login' && (
             <div className="bg-[#111111]/95 backdrop-blur-md border border-neutral-800 rounded-3xl p-6 shadow-2xl">
               <form onSubmit={handleLogin} className="space-y-4">
@@ -1021,7 +1016,6 @@ export default function App() {
             </div>
           )}
 
-          {/* FLUXO DE CADASTRO EM ETAPAS */}
           {authView === 'signup' && (
             <div className="bg-[#111111]/95 backdrop-blur-md border border-neutral-800 rounded-3xl p-6 shadow-2xl">
               <div className="flex items-center justify-between mb-5">
@@ -1322,7 +1316,6 @@ export default function App() {
                   </section>
                 )}
 
-                {/* BARRA DE FILTRO COM CIDADE + DIA DA SEMANA */}
                 <section className="bg-[#111111] border border-neutral-800 rounded-2xl p-3.5 space-y-2.5">
                   <div className="flex flex-wrap gap-2 items-center">
                     <div className="flex-1 min-w-[160px] flex items-center gap-2 bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5">
@@ -1358,7 +1351,6 @@ export default function App() {
                   </div>
                 </section>
 
-                {/* LISTAGEM DE TURNOS */}
                 <section className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-base font-bold text-white">Turnos Disponíveis</h2>
@@ -1528,7 +1520,6 @@ export default function App() {
                             </span>
                           </div>
 
-                          {/* AÇÕES QUANDO ACEITO: WHATSAPP + CONFIRMAR TÉRMINO E AVALIAR */}
                           {isAccepted && (
                             <div className="pt-2 space-y-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
                               {isCompany && workerPhone ? (
@@ -1551,7 +1542,6 @@ export default function App() {
                                 </a>
                               ) : null}
 
-                              {/* CONFIRMAÇÃO DE TÉRMINO E AVALIAÇÃO */}
                               {alreadyReviewed ? (
                                 <div className="w-full text-center text-xs font-bold bg-neutral-100 text-neutral-700 py-2.5 rounded-2xl">
                                   ✓ Término confirmado e avaliação enviada
@@ -1603,8 +1593,7 @@ export default function App() {
 
             {activeTab === 'profile' && (
               <div className="space-y-6">
-                {/* CARTÃO DE ALERTAS PUSH (20 KM) PARA TRABALHADOR */}
-                {(profile?.role || role) === 'worker' && (
+                {(profile?.role || role) === 'worker' && !pushEnabled && (
                   <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
@@ -1633,7 +1622,6 @@ export default function App() {
                   </section>
                 )}
 
-                {/* CARTÃO DE HISTÓRICO E REPUTAÇÃO DO USUÁRIO */}
                 <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-base font-bold text-white">Meu Histórico & Avaliações</h2>
@@ -1669,7 +1657,6 @@ export default function App() {
                   )}
                 </section>
 
-                {/* DADOS CADASTRAIS */}
                 <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-5">
                   <h2 className="text-lg font-bold text-white">Meus Dados Cadastrais</h2>
                   <form onSubmit={handleUpdateProfile} className="space-y-4">
@@ -1801,7 +1788,6 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL DETALHES DO TURNO + HISTÓRICO DA EMPRESA */}
       {selectedShiftModal && (() => {
         const compRep = getReputationStats(selectedShiftModal.company?.id)
         return (
@@ -1899,7 +1885,6 @@ export default function App() {
         )
       })()}
 
-      {/* MODAL HISTÓRICO E FICHA DO TRABALHADOR */}
       {selectedWorkerModal && selectedWorkerModal.worker && (() => {
         const wRep = getReputationStats(selectedWorkerModal.worker.id)
         return (
@@ -1961,7 +1946,6 @@ export default function App() {
         )
       })()}
 
-      {/* MODAL DE AVALIAÇÃO MÚTUA APÓS TÉRMINO */}
       {reviewModalApp && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setReviewModalApp(null)}>
           <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
