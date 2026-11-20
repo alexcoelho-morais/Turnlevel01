@@ -143,10 +143,16 @@ export default function App() {
   const [selectedShiftModal, setSelectedShiftModal] = useState(null)
   const [selectedWorkerModal, setSelectedWorkerModal] = useState(null)
 
+  const [editingShift, setEditingShift] = useState(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
   const [reviewModalApp, setReviewModalApp] = useState(null)
   const [reviewRating, setReviewRating] = useState(5)
   const [reviewComment, setReviewComment] = useState('')
   const [submittingReview, setSubmittingReview] = useState(false)
+
+  // Tipo de publicação da empresa: 'shift' (Turno) ou 'job' (Vaga de Emprego)
+  const [publishType, setPublishType] = useState('shift')
 
   const [title, setTitle] = useState('')
   const [vacancies, setVacancies] = useState('1')
@@ -160,6 +166,11 @@ export default function App() {
   const [requirements, setRequirements] = useState('')
   const [shiftNeighborhood, setShiftNeighborhood] = useState('')
   const [shiftStreet, setShiftStreet] = useState('')
+
+  // Campos exclusivos de Vaga de Trabalho
+  const [employmentType, setEmploymentType] = useState('CLT / Efetivo')
+  const [workSchedule, setWorkSchedule] = useState('Segunda a Sábado')
+  const [salaryPeriod, setSalaryPeriod] = useState('/ mês')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -552,7 +563,7 @@ export default function App() {
             (s.company?.city && s.company.city.toLowerCase().includes(term))
         )
       }
-      if (filterDay !== '') {
+      if (filterDay !== '' && activeTab === 'shifts') {
         result = result.filter((s) => {
           const d = new Date(s.shift_date)
           return String(d.getDay()) === filterDay
@@ -604,22 +615,31 @@ export default function App() {
     e.preventDefault()
     if (!session || !profile) return
 
+    const isJob = publishType === 'job'
     const bairroFinal = shiftNeighborhood || profile.neighborhood || ''
     const ruaFinal = shiftStreet || profile.address || ''
     const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${profile.city || 'Cidade'}/${profile.state || ''}`
 
+    const finalDate = isJob
+      ? (shiftDate ? new Date(shiftDate).toISOString() : new Date().toISOString())
+      : new Date(shiftDate).toISOString()
+
     const { error } = await supabase.from('shifts').insert([
       {
         company_id: session.user.id,
+        post_type: publishType,
         title,
         vacancies: parseInt(vacancies, 10),
-        workload,
+        workload: isJob ? workSchedule : workload,
         shift_hours: shiftHours,
         pay_rate: parseFloat(payRate),
-        shift_date: new Date(shiftDate).toISOString(),
+        shift_date: finalDate,
         transport_info: transportInfo,
         meal_info: mealInfo,
         vehicle_required: vehicleRequired,
+        employment_type: isJob ? employmentType : null,
+        work_schedule: isJob ? workSchedule : null,
+        salary_period: isJob ? salaryPeriod : '/ turno',
         requirements,
         description: requirements,
         shift_neighborhood: bairroFinal,
@@ -629,15 +649,108 @@ export default function App() {
     ])
 
     if (error) {
-      alert('Erro ao publicar turno: ' + error.message)
+      alert('Erro ao publicar: ' + error.message)
     } else {
-      alert('Turno publicado com sucesso!')
+      alert(isJob ? 'Vaga de trabalho publicada com sucesso!' : 'Turno publicado com sucesso!')
       setTitle('')
       setShiftHours('')
       setPayRate('')
       setShiftDate('')
       setRequirements('')
+      setActiveTab(isJob ? 'jobs' : 'shifts')
       fetchShifts(cityFilter, dayFilter)
+    }
+  }
+
+  function handleOpenEditShift(shift) {
+    const localDate = shift.shift_date
+      ? new Date(shift.shift_date).toISOString().slice(0, 16)
+      : ''
+
+    setEditingShift({
+      id: shift.id,
+      post_type: shift.post_type || 'shift',
+      title: shift.title || '',
+      vacancies: String(shift.vacancies || 1),
+      workload: shift.workload || '6 horas',
+      shift_hours: shift.shift_hours || '',
+      pay_rate: String(shift.pay_rate ?? ''),
+      shift_date: localDate,
+      transport_info: shift.transport_info || 'Vale-transporte pago',
+      meal_info: shift.meal_info || 'Alimentação no local',
+      vehicle_required: shift.vehicle_required || 'Não exige veículo',
+      employment_type: shift.employment_type || 'CLT / Efetivo',
+      work_schedule: shift.work_schedule || 'Segunda a Sábado',
+      salary_period: shift.salary_period || (shift.post_type === 'job' ? '/ mês' : '/ turno'),
+      shift_neighborhood: shift.shift_neighborhood || '',
+      shift_street: shift.shift_street || '',
+      requirements: shift.requirements || shift.description || '',
+      status: shift.status || 'open'
+    })
+  }
+
+  async function handleSaveEditShift(e) {
+    e.preventDefault()
+    if (!editingShift || !session) return
+    setSavingEdit(true)
+
+    const isJob = editingShift.post_type === 'job'
+    const bairroFinal = editingShift.shift_neighborhood || profile?.neighborhood || ''
+    const ruaFinal = editingShift.shift_street || profile?.address || ''
+    const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${profile?.city || 'Cidade'}/${profile?.state || ''}`
+
+    const { error } = await supabase
+      .from('shifts')
+      .update({
+        title: editingShift.title,
+        vacancies: parseInt(editingShift.vacancies, 10) || 1,
+        workload: isJob ? editingShift.work_schedule : editingShift.workload,
+        shift_hours: editingShift.shift_hours,
+        pay_rate: parseFloat(editingShift.pay_rate),
+        shift_date: editingShift.shift_date ? new Date(editingShift.shift_date).toISOString() : new Date().toISOString(),
+        transport_info: editingShift.transport_info,
+        meal_info: editingShift.meal_info,
+        vehicle_required: editingShift.vehicle_required,
+        employment_type: isJob ? editingShift.employment_type : null,
+        work_schedule: isJob ? editingShift.work_schedule : null,
+        salary_period: isJob ? editingShift.salary_period : '/ turno',
+        shift_neighborhood: bairroFinal,
+        shift_street: ruaFinal,
+        location: locationLabel,
+        requirements: editingShift.requirements,
+        description: editingShift.requirements,
+        status: editingShift.status
+      })
+      .eq('id', editingShift.id)
+      .eq('company_id', session.user.id)
+
+    setSavingEdit(false)
+    if (error) {
+      alert('Erro ao atualizar: ' + error.message)
+    } else {
+      alert('Atualizado com sucesso!')
+      setEditingShift(null)
+      fetchShifts(cityFilter, dayFilter)
+    }
+  }
+
+  async function handleDeleteShift(shiftId) {
+    if (!session) return
+    const confirmed = window.confirm('Tem certeza que deseja excluir esta publicação permanentemente?')
+    if (!confirmed) return
+
+    const { error } = await supabase
+      .from('shifts')
+      .delete()
+      .eq('id', shiftId)
+      .eq('company_id', session.user.id)
+
+    if (error) {
+      alert('Erro ao excluir: ' + error.message)
+    } else {
+      alert('Excluído com sucesso!')
+      setShifts((prev) => prev.filter((s) => s.id !== shiftId))
+      fetchApplications(profile)
     }
   }
 
@@ -648,7 +761,7 @@ export default function App() {
     ])
 
     if (error) {
-      if (error.code === '23505') alert('Você já se candidatou a este turno.')
+      if (error.code === '23505') alert('Você já se candidatou.')
       else alert('Erro: ' + error.message)
     } else {
       alert('Candidatura enviada com sucesso.')
@@ -705,7 +818,7 @@ export default function App() {
 
     setSubmittingReview(false)
     if (error) {
-      if (error.code === '23505') alert('Você já avaliou este turno.')
+      if (error.code === '23505') alert('Você já avaliou.')
       else alert('Erro ao enviar avaliação: ' + error.message)
     } else {
       alert('Avaliação registrada com sucesso.')
@@ -765,10 +878,10 @@ export default function App() {
           {isTerms ? (
             <div className="space-y-3 text-xs text-neutral-300 leading-relaxed">
               <p>
-                O <strong className="text-white">TurnLevel</strong> conecta empresas com demanda de turnos pontuais a trabalhadores disponíveis na região.
+                O <strong className="text-white">TurnLevel</strong> conecta empresas com demanda de turnos pontuais e vagas de trabalho a profissionais disponíveis na região.
               </p>
               <p>
-                A definição de valores, horários, benefícios e condições operacionais do turno é de responsabilidade direta das partes envolvidas.
+                A definição de valores, salários, horários, benefícios e condições operacionais é de responsabilidade direta das partes envolvidas.
               </p>
               <p>
                 Ao usar a plataforma, você concorda em fornecer dados verdadeiros e manter conduta respeitosa nas candidaturas e avaliações após o serviço.
@@ -780,7 +893,7 @@ export default function App() {
                 Coletamos apenas informações necessárias para o funcionamento do <strong className="text-white">TurnLevel</strong>: dados de perfil, telefone/WhatsApp e localização (CEP, bairro, cidade, coordenadas e raio de deslocamento).
               </p>
               <p>
-                A localização é utilizada para filtrar turnos próximos e viabilizar alertas de vagas na sua região (raio de até 20 km).
+                A localização é utilizada para filtrar turnos e vagas próximas e viabilizar alertas na sua região (raio de até 20 km).
               </p>
               <p>
                 Não vendemos seus dados pessoais a terceiros. Você pode atualizar seus dados na aba Perfil ou solicitar a exclusão da conta pelos canais oficiais.
@@ -839,11 +952,11 @@ export default function App() {
               <div className="overflow-hidden rounded-full bg-[#111111]/90 border border-neutral-800/80 py-2 px-1">
                 <div className="animate-marquee gap-6 text-[11px] font-bold text-neutral-300">
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Cadastro 100% Gratuito</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Turnos por Proximidade</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Turnos & Vagas Fixas</span>
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Avaliações Verificadas</span>
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Direto no WhatsApp</span>
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Cadastro 100% Gratuito</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Turnos por Proximidade</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Turnos & Vagas Fixas</span>
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Avaliações Verificadas</span>
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-lime-400" /> Direto no WhatsApp</span>
                 </div>
@@ -855,7 +968,7 @@ export default function App() {
                     <span className="text-[10px] font-extrabold uppercase tracking-wider">Cadastro 100% Gratuito</span>
                   </div>
                   <h1 className="text-xl font-extrabold text-white pt-1 leading-snug">
-                    Ganhe por turno trabalhado ou complete sua equipe em minutos.
+                    Ganhe por turno trabalhado ou conquiste sua vaga fixa.
                   </h1>
                   <p className="text-xs text-neutral-400 leading-relaxed">
                     Sem burocracia e sem taxas escondidas. Selecione seu perfil para criar sua conta grátis:
@@ -876,7 +989,7 @@ export default function App() {
                       </div>
                       <div className="space-y-0.5">
                         <div className="text-sm font-extrabold text-white group-hover:text-lime-400 transition">Sou Trabalhador</div>
-                        <div className="text-xs text-neutral-400">Escolha seus dias, veja o valor e candidate-se grátis</div>
+                        <div className="text-xs text-neutral-400">Busque turnos rápidos ou vagas fixas grátis</div>
                       </div>
                     </div>
                     <span className="text-lime-400 text-lg font-bold group-hover:translate-x-1 transition-transform">→</span>
@@ -895,7 +1008,7 @@ export default function App() {
                       </div>
                       <div className="space-y-0.5">
                         <div className="text-sm font-extrabold text-white group-hover:text-lime-400 transition">Sou Empresa</div>
-                        <div className="text-xs text-neutral-400">Publique vagas, veja avaliações e chame no WhatsApp</div>
+                        <div className="text-xs text-neutral-400">Publique turnos ou vagas de contratação</div>
                       </div>
                     </div>
                     <span className="text-lime-400 text-lg font-bold group-hover:translate-x-1 transition-transform">→</span>
@@ -941,7 +1054,7 @@ export default function App() {
                     </div>
                     <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
                       <span className="w-5 h-5 rounded-full bg-lime-400 text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">2</span>
-                      <p><strong>Filtre turnos pelo dia da semana</strong>, veja a nota da empresa e o valor líquido pago.</p>
+                      <p><strong>Escolha entre Turnos ou Vagas:</strong> abas separadas para diárias rápidas ou empregos fixos.</p>
                     </div>
                     <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
                       <span className="w-5 h-5 rounded-full bg-lime-400 text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">3</span>
@@ -952,7 +1065,7 @@ export default function App() {
                   <div className="space-y-2.5 text-xs text-neutral-300">
                     <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
                       <span className="w-5 h-5 rounded-full bg-white text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">1</span>
-                      <p><strong>Cadastre sua empresa grátis</strong> e publique o turno informando função, valor, horário e se exige veículo.</p>
+                      <p><strong>Publique Turno ou Vaga:</strong> escolha se precisa cobrir um turno específico ou contratar para vaga fixa.</p>
                     </div>
                     <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
                       <span className="w-5 h-5 rounded-full bg-white text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">2</span>
@@ -960,7 +1073,7 @@ export default function App() {
                     </div>
                     <div className="flex items-start gap-2.5 bg-[#050505] p-3 rounded-2xl border border-neutral-800/70">
                       <span className="w-5 h-5 rounded-full bg-white text-black font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">3</span>
-                      <p><strong>Aprove e conecte-se no WhatsApp:</strong> ao final do serviço, confirme o encerramento e avalie o profissional.</p>
+                      <p><strong>Aprove e conecte-se no WhatsApp:</strong> combine início, entrevista ou encerramento direto pelo app.</p>
                     </div>
                   </div>
                 )}
@@ -1198,6 +1311,13 @@ export default function App() {
   const myReputation = getReputationStats(session.user.id)
   const myCompletedCount = applications.filter((a) => a.status === 'accepted' && (a.company_confirmed_end || a.worker_confirmed_end)).length
 
+  // Separação estrita: Turnos ('shift') vs Vagas de Trabalho ('job')
+  const isJobsTab = activeTab === 'jobs'
+  const filteredListings = shifts.filter((item) => {
+    const itemType = item.post_type || 'shift'
+    return isJobsTab ? itemType === 'job' : itemType !== 'job'
+  })
+
   return (
     <div className="min-h-screen bg-[#050505] text-white pb-24">
       <header className="bg-[#050505]/90 backdrop-blur-md border-b border-neutral-900 sticky top-0 z-10 px-4 py-3.5">
@@ -1231,47 +1351,157 @@ export default function App() {
           <p className="text-sm text-neutral-400 text-center py-10">A carregar dados...</p>
         ) : (
           <>
-            {activeTab === 'shifts' && (
+            {(activeTab === 'shifts' || activeTab === 'jobs') && (
               <div className="space-y-6">
                 {(profile?.role || role) === 'company' && (
-                  <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-base font-bold text-white">Publicar Novo Turno</h2>
-                      <span className="text-[11px] bg-lime-400/10 text-lime-400 border border-lime-400/30 px-2.5 py-0.5 rounded-full font-semibold">Vaga Rápida</span>
+                  <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-base font-bold text-white">O que deseja publicar?</h2>
+                        <p className="text-[11px] text-neutral-400">Escolha entre turno pontual ou vaga de trabalho</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 bg-[#050505] p-1 rounded-2xl border border-neutral-800">
+                        <button
+                          type="button"
+                          onClick={() => setPublishType('shift')}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
+                            publishType === 'shift'
+                              ? 'bg-lime-400 text-black shadow-sm'
+                              : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          Contratar Turno
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPublishType('job')}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition ${
+                            publishType === 'job'
+                              ? 'bg-lime-400 text-black shadow-sm'
+                              : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          Publicar Vaga
+                        </button>
+                      </div>
                     </div>
+
                     <form onSubmit={handleCreateShift} className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <label className="block text-xs text-neutral-400 mb-1">Função / Cargo</label>
-                        <input type="text" required placeholder="Ex: Garçom / Entregador" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">
+                          {publishType === 'job' ? 'Cargo / Vaga Disponível' : 'Função / Cargo do Turno'}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder={publishType === 'job' ? 'Ex: Atendente / Cozinheiro(a)' : 'Ex: Garçom / Entregador'}
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                        />
                       </div>
+
                       <div>
-                        <label className="block text-xs text-neutral-400 mb-1">Vagas</label>
+                        <label className="block text-xs text-neutral-400 mb-1">Quantidade de Vagas</label>
                         <select value={vacancies} onChange={(e) => setVacancies(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
-                          {[1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map((v) => <option key={v} value={v}>{v} vagas</option>)}
+                          {[1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map((v) => <option key={v} value={v}>{v} {v === 1 ? 'vaga' : 'vagas'}</option>)}
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs text-neutral-400 mb-1">Carga Horária</label>
-                        <select value={workload} onChange={(e) => setWorkload(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
-                          <option value="4 horas">4 horas</option>
-                          <option value="6 horas">6 horas</option>
-                          <option value="8 horas">8 horas</option>
-                          <option value="10 horas">10 horas</option>
-                          <option value="12 horas (Plantão)">12 horas (Plantão)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-neutral-400 mb-1">Horário</label>
-                        <input type="text" required placeholder="18:00 às 00:00" value={shiftHours} onChange={(e) => setShiftHours(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-neutral-400 mb-1">Valor (R$)</label>
-                        <input type="number" inputMode="decimal" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-neutral-400 mb-1">Data</label>
-                        <input type="datetime-local" required value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
-                      </div>
+
+                      {publishType === 'job' ? (
+                        <>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Tipo de Contratação</label>
+                            <select value={employmentType} onChange={(e) => setEmploymentType(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                              <option value="CLT / Efetivo">CLT / Efetivo</option>
+                              <option value="Temporário">Temporário</option>
+                              <option value="Período de Experiência">Período de Experiência</option>
+                              <option value="PJ / Prestador">PJ / Prestador</option>
+                              <option value="A combinar">A combinar</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Escala de Trabalho</label>
+                            <select value={workSchedule} onChange={(e) => setWorkSchedule(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                              <option value="Segunda a Sexta">Segunda a Sexta</option>
+                              <option value="Segunda a Sábado">Segunda a Sábado</option>
+                              <option value="Escala 6x1">Escala 6x1</option>
+                              <option value="Escala 5x2">Escala 5x2</option>
+                              <option value="Escala 12x36">Escala 12x36</option>
+                              <option value="Finais de Semana">Finais de Semana</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Horário de Trabalho</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ex: 08:00 às 17:00"
+                              value={shiftHours}
+                              onChange={(e) => setShiftHours(e.target.value)}
+                              className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Salário / Remuneração (R$)</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                required
+                                placeholder="1800.00"
+                                value={payRate}
+                                onChange={(e) => setPayRate(e.target.value)}
+                                className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                              />
+                              <select
+                                value={salaryPeriod}
+                                onChange={(e) => setSalaryPeriod(e.target.value)}
+                                className="w-28 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-xs font-bold text-white"
+                              >
+                                <option value="/ mês">/ mês</option>
+                                <option value="/ quinzena">/ quinzena</option>
+                                <option value="/ semana">/ semana</option>
+                                <option value="/ dia">/ dia</option>
+                              </select>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Carga Horária</label>
+                            <select value={workload} onChange={(e) => setWorkload(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                              <option value="4 horas">4 horas</option>
+                              <option value="6 horas">6 horas</option>
+                              <option value="8 horas">8 horas</option>
+                              <option value="10 horas">10 horas</option>
+                              <option value="12 horas (Plantão)">12 horas (Plantão)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Horário do Turno</label>
+                            <input type="text" required placeholder="18:00 às 00:00" value={shiftHours} onChange={(e) => setShiftHours(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Valor do Turno (R$)</label>
+                            <input type="number" inputMode="decimal" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Data do Turno</label>
+                            <input type="datetime-local" required value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                        </>
+                      )}
+
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Transporte</label>
                         <select value={transportInfo} onChange={(e) => setTransportInfo(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
@@ -1280,6 +1510,7 @@ export default function App() {
                           <option value="Não fornece transporte">Não fornece transporte</option>
                         </select>
                       </div>
+
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Alimentação</label>
                         <select value={mealInfo} onChange={(e) => setMealInfo(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
@@ -1288,6 +1519,7 @@ export default function App() {
                           <option value="Não fornece alimentação">Não fornece alimentação</option>
                         </select>
                       </div>
+
                       <div className="sm:col-span-2">
                         <label className="block text-xs text-neutral-400 mb-1">Exigência de Veículo (Moto ou Carro)</label>
                         <select value={vehicleRequired} onChange={(e) => setVehicleRequired(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white">
@@ -1297,20 +1529,33 @@ export default function App() {
                           <option value="Moto ou Carro próprio">Moto ou Carro próprio</option>
                         </select>
                       </div>
+
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Bairro / Setor</label>
                         <input type="text" required placeholder="Setor Bueno" value={shiftNeighborhood} onChange={(e) => setShiftNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
+
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Rua e Número</label>
                         <input type="text" required placeholder="Rua T-30, nº 120" value={shiftStreet} onChange={(e) => setShiftStreet(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                       </div>
+
                       <div className="sm:col-span-2">
-                        <label className="block text-xs text-neutral-400 mb-1">Exigências / Observações</label>
-                        <input type="text" placeholder="Calça preta, CNH em dia..." value={requirements} onChange={(e) => setRequirements(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">
+                          {publishType === 'job' ? 'Requisitos, Experiência e Benefícios da Vaga' : 'Exigências / Observações'}
+                        </label>
+                        <input
+                          type="text"
+                          required={publishType === 'job'}
+                          placeholder={publishType === 'job' ? 'Ex: Experiência na função, ensino médio, disponibilidade...' : 'Calça preta, CNH em dia...'}
+                          value={requirements}
+                          onChange={(e) => setRequirements(e.target.value)}
+                          className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                        />
                       </div>
+
                       <button type="submit" className="sm:col-span-2 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
-                        + Publicar Vaga Agora
+                        {publishType === 'job' ? '+ Publicar Vaga de Trabalho' : '+ Publicar Turno Agora'}
                       </button>
                     </form>
                   </section>
@@ -1324,26 +1569,28 @@ export default function App() {
                         type="text"
                         value={cityFilter}
                         onChange={(e) => setCityFilter(e.target.value)}
-                        placeholder="Cidade ou bairro..."
+                        placeholder={isJobsTab ? 'Filtrar vagas por cidade ou bairro...' : 'Filtrar turnos por cidade ou bairro...'}
                         className="w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-500"
                       />
                     </div>
-                    <select
-                      value={dayFilter}
-                      onChange={(e) => {
-                        setDayFilter(e.target.value)
-                        fetchShifts(cityFilter, e.target.value)
-                      }}
-                      className="bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-lime-400"
-                    >
-                      {WEEK_DAYS.map((d) => (
-                        <option key={d.value} value={d.value}>{d.label}</option>
-                      ))}
-                    </select>
+                    {!isJobsTab && (
+                      <select
+                        value={dayFilter}
+                        onChange={(e) => {
+                          setDayFilter(e.target.value)
+                          fetchShifts(cityFilter, e.target.value)
+                        }}
+                        className="bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-lime-400"
+                      >
+                        {WEEK_DAYS.map((d) => (
+                          <option key={d.value} value={d.value}>{d.label}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => fetchShifts(cityFilter, dayFilter)} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-2.5 rounded-xl transition">
-                      Buscar Turnos
+                      {isJobsTab ? 'Buscar Vagas' : 'Buscar Turnos'}
                     </button>
                     <button onClick={() => { setCityFilter(''); setDayFilter(''); fetchShifts('', '') }} className="bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-medium px-4 py-2.5 rounded-xl border border-neutral-800 transition">
                       Limpar
@@ -1353,24 +1600,33 @@ export default function App() {
 
                 <section className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-base font-bold text-white">Turnos Disponíveis</h2>
+                    <h2 className="text-base font-bold text-white">
+                      {isJobsTab ? 'Vagas de Trabalho Disponíveis' : 'Turnos Disponíveis'}
+                    </h2>
                     <span className="text-xs font-bold bg-neutral-900 text-lime-400 border border-neutral-800 px-2.5 py-1 rounded-full">
-                      {shifts.length} {shifts.length === 1 ? 'vaga' : 'vagas'}
+                      {filteredListings.length} {filteredListings.length === 1 ? 'opção' : 'opções'}
                     </span>
                   </div>
 
                   {loadingShifts ? (
-                    <p className="text-sm text-neutral-400">A procurar turnos...</p>
-                  ) : shifts.length === 0 ? (
+                    <p className="text-sm text-neutral-400">
+                      {isJobsTab ? 'A procurar vagas...' : 'A procurar turnos...'}
+                    </p>
+                  ) : filteredListings.length === 0 ? (
                     <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
-                      <p className="text-sm text-neutral-400">Nenhum turno encontrado com esses filtros.</p>
+                      <p className="text-sm text-neutral-400">
+                        {isJobsTab
+                          ? 'Nenhuma vaga de contratação encontrada com esses filtros.'
+                          : 'Nenhum turno encontrado com esses filtros.'}
+                      </p>
                     </div>
                   ) : (
                     <div className="grid gap-4 sm:grid-cols-2">
-                      {shifts.map((shift) => {
+                      {filteredListings.map((shift) => {
                         const applied = applications.some((a) => a.shift_id === shift.id)
                         const compRep = getReputationStats(shift.company?.id)
                         const hasVehicleReq = shift.vehicle_required && shift.vehicle_required !== 'Não exige veículo'
+                        const itemIsJob = (shift.post_type || 'shift') === 'job'
 
                         return (
                           <div
@@ -1381,7 +1637,9 @@ export default function App() {
                             <div>
                               <div className="flex items-center justify-between gap-2 mb-3">
                                 <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
-                                  {new Date(shift.shift_date).toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase()} • {shift.workload || '6 horas'}
+                                  {itemIsJob
+                                    ? `${shift.employment_type || 'Contratação'} • ${shift.work_schedule || shift.workload || 'Escala a combinar'}`
+                                    : `${new Date(shift.shift_date).toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase()} • ${shift.workload || '6 horas'}`}
                                 </span>
                                 {hasVehicleReq && (
                                   <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
@@ -1396,7 +1654,9 @@ export default function App() {
                                 <span className="text-2xl font-black text-[#4d7c0f] tracking-tight">
                                   R$ {Number(shift.pay_rate).toFixed(2).replace('.', ',')}
                                 </span>
-                                <span className="text-xs font-semibold text-neutral-500">/ turno</span>
+                                <span className="text-xs font-semibold text-neutral-500">
+                                  {itemIsJob ? (shift.salary_period || '/ mês') : '/ turno'}
+                                </span>
                               </div>
 
                               <div className="mt-4 pt-3 border-t border-neutral-200 space-y-1.5">
@@ -1416,11 +1676,19 @@ export default function App() {
                                   </span>
                                 </div>
                                 <p className="text-xs text-neutral-600 font-medium">Local: {shift.location}</p>
-                                <p className="text-xs text-neutral-500">Data: {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}</p>
+                                {itemIsJob ? (
+                                  <p className="text-xs text-neutral-500">
+                                    Horário: {shift.shift_hours || 'A combinar'} • {shift.vacancies || 1} {Number(shift.vacancies || 1) === 1 ? 'vaga' : 'vagas'}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-neutral-500">
+                                    Data: {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
-                            <div className="pt-1" onClick={(e) => e.stopPropagation()}>
+                            <div className="pt-1 space-y-2" onClick={(e) => e.stopPropagation()}>
                               {(profile?.role || role) === 'worker' ? (
                                 shift.status !== 'open' ? (
                                   <div className="w-full text-center text-xs font-bold bg-neutral-200 text-neutral-600 py-3 rounded-2xl">
@@ -1435,9 +1703,26 @@ export default function App() {
                                     onClick={() => setSelectedShiftModal(shift)}
                                     className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-sm"
                                   >
-                                    Ver Detalhes e Candidatar
+                                    {itemIsJob ? 'Ver Vaga e Candidatar' : 'Ver Detalhes e Candidatar'}
                                   </button>
                                 )
+                              ) : shift.company_id === session.user.id ? (
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditShift(shift)}
+                                    className="flex-1 bg-black hover:bg-neutral-800 text-lime-400 text-xs font-extrabold py-2.5 rounded-2xl transition"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteShift(shift.id)}
+                                    className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-extrabold py-2.5 rounded-2xl transition"
+                                  >
+                                    Excluir
+                                  </button>
+                                </div>
                               ) : (
                                 <div className="w-full text-center text-xs font-bold bg-black text-white py-2.5 rounded-2xl">
                                   Status: {shift.status === 'open' ? 'Aberto' : 'Preenchido'}
@@ -1456,7 +1741,7 @@ export default function App() {
             {activeTab === 'applications' && (
               <section className="space-y-4">
                 <h2 className="text-lg font-bold text-white">
-                  {(profile?.role || role) === 'company' ? 'Candidatos & Turnos Ativos' : 'Minhas Candidaturas & Turnos'}
+                  {(profile?.role || role) === 'company' ? 'Candidatos & Turnos Ativos' : 'Minhas Candidaturas'}
                 </h2>
                 {applications.length === 0 ? (
                   <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
@@ -1471,6 +1756,7 @@ export default function App() {
                       const workerPhone = app.worker?.phone_ddd && app.worker?.phone ? `55${app.worker.phone_ddd}${app.worker.phone.replace(/\D/g, '')}` : ''
                       const workerRep = app.worker ? getReputationStats(app.worker.id) : { avg: null, count: 0 }
                       const alreadyReviewed = allReviews.some((r) => r.application_id === app.id && r.reviewer_id === session.user.id)
+                      const appIsJob = (app.shift?.post_type || 'shift') === 'job'
 
                       return (
                         <div
@@ -1485,6 +1771,7 @@ export default function App() {
                           <div className="flex justify-between items-start gap-2">
                             <div>
                               <span className="text-xs font-extrabold text-[#4d7c0f] uppercase tracking-wide">
+                                {appIsJob ? 'VAGA • ' : 'TURNO • '}
                                 {app.shift?.title} • R$ {Number(app.shift?.pay_rate || 0).toFixed(2).replace('.', ',')}
                               </span>
                               {isCompany ? (
@@ -1524,7 +1811,7 @@ export default function App() {
                             <div className="pt-2 space-y-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
                               {isCompany && workerPhone ? (
                                 <a
-                                  href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20o%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel.%20Vamos%20alinhar%20os%20detalhes?`}
+                                  href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel.%20Vamos%20alinhar%20os%20detalhes?`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
@@ -1533,7 +1820,7 @@ export default function App() {
                                 </a>
                               ) : !isCompany && companyPhone ? (
                                 <a
-                                  href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20no%20turno%20de%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel.`}
+                                  href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20para%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel.`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
@@ -1544,7 +1831,7 @@ export default function App() {
 
                               {alreadyReviewed ? (
                                 <div className="w-full text-center text-xs font-bold bg-neutral-100 text-neutral-700 py-2.5 rounded-2xl">
-                                  ✓ Término confirmado e avaliação enviada
+                                  ✓ Confirmado e avaliação enviada
                                 </div>
                               ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1552,20 +1839,20 @@ export default function App() {
                                     onClick={() => handleConfirmShiftEndAndOpenReview(app)}
                                     className="w-full bg-black hover:bg-neutral-800 text-lime-400 text-xs font-extrabold py-3 rounded-2xl transition"
                                   >
-                                    ★ Confirmar Término e Avaliar
+                                    ★ Confirmar e Avaliar
                                   </button>
                                   {(isCompany ? workerPhone : companyPhone) && (
                                     <a
                                       href={`https://wa.me/${isCompany ? workerPhone : companyPhone}?text=${encodeURIComponent(
                                         isCompany
-                                          ? `Olá ${app.worker?.full_name || ''}! Confirmamos o término do seu turno de ${app.shift?.title || ''} pelo TurnLevel. Acesse o app para confirmar e deixar sua avaliação sobre nossa empresa.`
-                                          : `Olá ${app.shift?.company?.full_name || ''}! Finalizei o turno de ${app.shift?.title || ''} pelo TurnLevel. Já confirmei no app, aguardo sua confirmação e avaliação.`
+                                          ? `Olá ${app.worker?.full_name || ''}! Confirmamos sua participação em ${app.shift?.title || ''} pelo TurnLevel. Acesse o app para deixar sua avaliação.`
+                                          : `Olá ${app.shift?.company?.full_name || ''}! Já confirmei no app TurnLevel referente a ${app.shift?.title || ''}.`
                                       )}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="flex items-center justify-center gap-1.5 w-full bg-neutral-200 hover:bg-neutral-300 text-black text-xs font-bold py-3 rounded-2xl transition"
                                     >
-                                      Notificar Término no WhatsApp
+                                      Notificar no WhatsApp
                                     </a>
                                   )}
                                 </div>
@@ -1597,9 +1884,9 @@ export default function App() {
                   <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <h2 className="text-base font-bold text-white">Alertas de Vagas (Raio de 20 km)</h2>
+                        <h2 className="text-base font-bold text-white">Alertas de Vagas e Turnos (Raio de 20 km)</h2>
                         <p className="text-xs text-neutral-400">
-                          Receba notificações gratuitas no aparelho quando novas vagas surgirem perto de você.
+                          Receba notificações gratuitas no aparelho quando novas oportunidades surgirem perto de você.
                         </p>
                       </div>
                       <span className="text-[10px] font-extrabold bg-lime-400/15 text-lime-400 border border-lime-400/30 px-2.5 py-1 rounded-full shrink-0">
@@ -1613,7 +1900,7 @@ export default function App() {
                       disabled={pushLoading}
                       className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]"
                     >
-                      {pushLoading ? 'Ativando notificações...' : '🔔 Ativar Notificações de Vagas (20 km)'}
+                      {pushLoading ? 'Ativando notificações...' : '🔔 Ativar Notificações (20 km)'}
                     </button>
 
                     {pushStatus && (
@@ -1632,7 +1919,7 @@ export default function App() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-[#050505] border border-neutral-800 p-3.5 rounded-2xl">
-                      <span className="text-[11px] text-neutral-400 block">Turnos Concluídos</span>
+                      <span className="text-[11px] text-neutral-400 block">Concluídos</span>
                       <span className="text-xl font-black text-white">{Math.max(myCompletedCount, myReputation.count)}</span>
                     </div>
                     <div className="bg-[#050505] border border-neutral-800 p-3.5 rounded-2xl">
@@ -1790,6 +2077,7 @@ export default function App() {
 
       {selectedShiftModal && (() => {
         const compRep = getReputationStats(selectedShiftModal.company?.id)
+        const modalIsJob = (selectedShiftModal.post_type || 'shift') === 'job'
         return (
           <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
             <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -1805,7 +2093,7 @@ export default function App() {
                   <div>
                     <h3 className="font-extrabold text-black text-base">{selectedShiftModal.company?.full_name || 'Empresa'}</h3>
                     <p className="text-xs font-extrabold text-amber-600">
-                      {compRep.avg ? `★ ${compRep.avg} • ${compRep.count} turnos avaliados` : 'Empresa recém-cadastrada'}
+                      {compRep.avg ? `★ ${compRep.avg} • ${compRep.count} avaliações` : 'Empresa recém-cadastrada'}
                     </p>
                     <p className="text-xs text-neutral-500">CNPJ: {selectedShiftModal.company?.cnpj || 'Não informado'}</p>
                   </div>
@@ -1832,9 +2120,21 @@ export default function App() {
               )}
 
               <div className="space-y-3 border-t border-neutral-200 pt-3">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-extrabold text-black text-lg">{selectedShiftModal.title}</h4>
-                  <span className="text-[#4d7c0f] font-black text-xl">R$ {Number(selectedShiftModal.pay_rate).toFixed(2).replace('.', ',')}</span>
+                <div className="flex justify-between items-center gap-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-black text-lime-400 px-2 py-0.5 rounded-full">
+                      {modalIsJob ? 'Vaga de Trabalho' : 'Turno Pontual'}
+                    </span>
+                    <h4 className="font-extrabold text-black text-lg mt-1">{selectedShiftModal.title}</h4>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[#4d7c0f] font-black text-xl block">
+                      R$ {Number(selectedShiftModal.pay_rate).toFixed(2).replace('.', ',')}
+                    </span>
+                    <span className="text-[11px] text-neutral-500 font-bold">
+                      {modalIsJob ? (selectedShiftModal.salary_period || '/ mês') : '/ turno'}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs pt-1">
@@ -1843,9 +2143,17 @@ export default function App() {
                     <span className="text-black font-bold">{selectedShiftModal.vacancies || 1}</span>
                   </div>
                   <div className="bg-neutral-100 p-3 rounded-2xl">
-                    <span className="text-neutral-500 block">Carga Horária</span>
-                    <span className="text-black font-bold">{selectedShiftModal.workload || 'A combinar'}</span>
+                    <span className="text-neutral-500 block">{modalIsJob ? 'Contratação' : 'Carga Horária'}</span>
+                    <span className="text-black font-bold">
+                      {modalIsJob ? (selectedShiftModal.employment_type || 'A combinar') : (selectedShiftModal.workload || 'A combinar')}
+                    </span>
                   </div>
+                  {modalIsJob && (
+                    <div className="col-span-2 bg-neutral-100 p-3 rounded-2xl">
+                      <span className="text-neutral-500 block">Escala</span>
+                      <span className="text-black font-bold">{selectedShiftModal.work_schedule || selectedShiftModal.workload || 'A combinar'}</span>
+                    </div>
+                  )}
                   <div className="bg-neutral-100 p-3 rounded-2xl">
                     <span className="text-neutral-500 block">Transporte</span>
                     <span className="text-black font-bold">{selectedShiftModal.transport_info || 'Não informado'}</span>
@@ -1861,9 +2169,17 @@ export default function App() {
                 </div>
 
                 <div className="bg-neutral-100 p-3.5 rounded-2xl text-xs space-y-1.5">
-                  <p className="text-neutral-800"><strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
+                  {modalIsJob ? (
+                    <p className="text-neutral-800"><strong>Horário:</strong> {selectedShiftModal.shift_hours || 'A combinar'}</p>
+                  ) : (
+                    <p className="text-neutral-800"><strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
+                  )}
                   <p className="text-neutral-800"><strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
-                  {selectedShiftModal.requirements && <p className="text-neutral-800 pt-1"><strong>Exigências:</strong> {selectedShiftModal.requirements}</p>}
+                  {selectedShiftModal.requirements && (
+                    <p className="text-neutral-800 pt-1">
+                      <strong>{modalIsJob ? 'Requisitos da vaga:' : 'Exigências:'}</strong> {selectedShiftModal.requirements}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1871,11 +2187,11 @@ export default function App() {
                 <div className="pt-2">
                   {applications.some((a) => a.shift_id === selectedShiftModal.id) ? (
                     <div className="w-full text-center py-3.5 rounded-2xl bg-black text-lime-400 text-xs font-extrabold">
-                      Você já se candidatou a este turno ✓
+                      Você já se candidatou ✓
                     </div>
                   ) : (
                     <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-md">
-                      Confirmar Candidatura
+                      {modalIsJob ? 'Candidatar-se à Vaga' : 'Confirmar Candidatura'}
                     </button>
                   )}
                 </div>
@@ -1902,7 +2218,7 @@ export default function App() {
                   <div>
                     <h3 className="font-extrabold text-black text-base">{selectedWorkerModal.worker.full_name}</h3>
                     <p className="text-xs font-extrabold text-amber-600">
-                      {wRep.avg ? `★ ${wRep.avg} • ${wRep.count} turnos avaliados` : 'Primeiro turno na plataforma'}
+                      {wRep.avg ? `★ ${wRep.avg} • ${wRep.count} avaliações` : 'Primeiro registro na plataforma'}
                     </p>
                     <p className="text-xs text-neutral-600 font-medium">
                       {selectedWorkerModal.worker.age ? `${selectedWorkerModal.worker.age} anos` : ''} • {selectedWorkerModal.worker.city}/{selectedWorkerModal.worker.state}
@@ -1946,6 +2262,258 @@ export default function App() {
         )
       })()}
 
+      {editingShift && (() => {
+        const editIsJob = editingShift.post_type === 'job'
+        return (
+          <div
+            className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setEditingShift(null)}
+          >
+            <div
+              className="bg-[#111111] border border-neutral-800 text-white rounded-3xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center border-b border-neutral-800 pb-3">
+                <h3 className="font-extrabold text-white text-base">
+                  {editIsJob ? 'Editar Vaga de Trabalho' : 'Editar Turno'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingShift(null)}
+                  className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditShift} className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Função / Cargo</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingShift.title}
+                    onChange={(e) => setEditingShift({ ...editingShift, title: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Vagas</label>
+                  <select
+                    value={editingShift.vacancies}
+                    onChange={(e) => setEditingShift({ ...editingShift, vacancies: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map((v) => (
+                      <option key={v} value={v}>{v} vagas</option>
+                    ))}
+                  </select>
+                </div>
+
+                {editIsJob ? (
+                  <>
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Tipo de Contratação</label>
+                      <select
+                        value={editingShift.employment_type}
+                        onChange={(e) => setEditingShift({ ...editingShift, employment_type: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                      >
+                        <option value="CLT / Efetivo">CLT / Efetivo</option>
+                        <option value="Temporário">Temporário</option>
+                        <option value="Período de Experiência">Período de Experiência</option>
+                        <option value="PJ / Prestador">PJ / Prestador</option>
+                        <option value="A combinar">A combinar</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Escala de Trabalho</label>
+                      <select
+                        value={editingShift.work_schedule}
+                        onChange={(e) => setEditingShift({ ...editingShift, work_schedule: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                      >
+                        <option value="Segunda a Sexta">Segunda a Sexta</option>
+                        <option value="Segunda a Sábado">Segunda a Sábado</option>
+                        <option value="Escala 6x1">Escala 6x1</option>
+                        <option value="Escala 5x2">Escala 5x2</option>
+                        <option value="Escala 12x36">Escala 12x36</option>
+                        <option value="Finais de Semana">Finais de Semana</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Horário</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingShift.shift_hours}
+                        onChange={(e) => setEditingShift({ ...editingShift, shift_hours: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Salário (R$)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          required
+                          value={editingShift.pay_rate}
+                          onChange={(e) => setEditingShift({ ...editingShift, pay_rate: e.target.value })}
+                          className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                        />
+                        <select
+                          value={editingShift.salary_period}
+                          onChange={(e) => setEditingShift({ ...editingShift, salary_period: e.target.value })}
+                          className="w-28 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-xs font-bold text-white"
+                        >
+                          <option value="/ mês">/ mês</option>
+                          <option value="/ quinzena">/ quinzena</option>
+                          <option value="/ semana">/ semana</option>
+                          <option value="/ dia">/ dia</option>
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Carga Horária</label>
+                      <select
+                        value={editingShift.workload}
+                        onChange={(e) => setEditingShift({ ...editingShift, workload: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                      >
+                        <option value="4 horas">4 horas</option>
+                        <option value="6 horas">6 horas</option>
+                        <option value="8 horas">8 horas</option>
+                        <option value="10 horas">10 horas</option>
+                        <option value="12 horas (Plantão)">12 horas (Plantão)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Horário</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingShift.shift_hours}
+                        onChange={(e) => setEditingShift({ ...editingShift, shift_hours: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Valor (R$)</label>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        required
+                        value={editingShift.pay_rate}
+                        onChange={(e) => setEditingShift({ ...editingShift, pay_rate: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Data</label>
+                      <input
+                        type="datetime-local"
+                        required
+                        value={editingShift.shift_date}
+                        onChange={(e) => setEditingShift({ ...editingShift, shift_date: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Status</label>
+                  <select
+                    value={editingShift.status}
+                    onChange={(e) => setEditingShift({ ...editingShift, status: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                  >
+                    <option value="open">Aberto</option>
+                    <option value="filled">Preenchido</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Exigência de Veículo</label>
+                  <select
+                    value={editingShift.vehicle_required}
+                    onChange={(e) => setEditingShift({ ...editingShift, vehicle_required: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                  >
+                    <option value="Não exige veículo">Não exige veículo</option>
+                    <option value="Moto própria obrigatória">Moto própria obrigatória</option>
+                    <option value="Carro próprio obrigatório">Carro próprio obrigatório</option>
+                    <option value="Moto ou Carro próprio">Moto ou Carro próprio</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Bairro / Setor</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingShift.shift_neighborhood}
+                    onChange={(e) => setEditingShift({ ...editingShift, shift_neighborhood: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Rua e Número</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingShift.shift_street}
+                    onChange={(e) => setEditingShift({ ...editingShift, shift_street: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-neutral-400 mb-1">Requisitos / Observações</label>
+                  <input
+                    type="text"
+                    value={editingShift.requirements}
+                    onChange={(e) => setEditingShift({ ...editingShift, requirements: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingShift(null)}
+                    className="w-1/3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-xs py-3 rounded-xl transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3 rounded-xl transition"
+                  >
+                    {savingEdit ? 'Salvando...' : 'Salvar Alterações ✓'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      })()}
+
       {reviewModalApp && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setReviewModalApp(null)}>
           <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -1954,7 +2522,7 @@ export default function App() {
               <button onClick={() => setReviewModalApp(null)} className="w-8 h-8 rounded-full bg-neutral-100 text-black font-bold flex items-center justify-center">✕</button>
             </div>
             <p className="text-xs text-neutral-600">
-              Turno: <strong>{reviewModalApp.shift?.title}</strong>. Sua avaliação aparece no histórico público e ajuda a manter a qualidade do TurnLevel.
+              Referência: <strong>{reviewModalApp.shift?.title}</strong>. Sua avaliação aparece no histórico público e ajuda a manter a qualidade do TurnLevel.
             </p>
             <form onSubmit={handleSubmitReview} className="space-y-4">
               <div>
@@ -1996,13 +2564,19 @@ export default function App() {
 
       {renderLegalModal()}
 
-      <nav className="fixed bottom-0 inset-x-0 bg-[#050505]/95 backdrop-blur-md border-t border-neutral-900 px-4 py-2.5 z-20">
-        <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
+      <nav className="fixed bottom-0 inset-x-0 bg-[#050505]/95 backdrop-blur-md border-t border-neutral-900 px-3 py-2.5 z-20">
+        <div className="max-w-lg mx-auto grid grid-cols-4 gap-1.5">
           <button
-            onClick={() => setActiveTab('shifts')}
+            onClick={() => { setActiveTab('shifts'); setPublishType('shift') }}
             className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'shifts' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
           >
             Turnos
+          </button>
+          <button
+            onClick={() => { setActiveTab('jobs'); setPublishType('job') }}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'jobs' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
+            Vagas
           </button>
           <button
             onClick={() => { setActiveTab('applications'); fetchApplications(profile); fetchAllReviews() }}
