@@ -15,6 +15,23 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray
 }
 
+function formatShiftHoursMask(rawValue) {
+  const digits = (rawValue || '').replace(/\D/g, '').slice(0, 8)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 4) return `${digits.slice(0, 2)}:${digits.slice(2)}`
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 2)}:${digits.slice(2, 4)} às ${digits.slice(4)}`
+  }
+  return `${digits.slice(0, 2)}:${digits.slice(2, 4)} às ${digits.slice(4, 6)}:${digits.slice(6)}`
+}
+
+function formatCurrencyBRL(value) {
+  return Number(value || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
+}
+
 const BRAZIL_DDDS = [
   '11', '12', '13', '14', '15', '16', '17', '18', '19',
   '21', '22', '24', '27', '28',
@@ -624,6 +641,8 @@ export default function App() {
       ? (shiftDate ? new Date(shiftDate).toISOString() : new Date().toISOString())
       : new Date(shiftDate).toISOString()
 
+    const numericPayRate = parseFloat(String(payRate).replace(',', '.'))
+
     const { error } = await supabase.from('shifts').insert([
       {
         company_id: session.user.id,
@@ -632,7 +651,7 @@ export default function App() {
         vacancies: parseInt(vacancies, 10),
         workload: isJob ? workSchedule : workload,
         shift_hours: shiftHours,
-        pay_rate: parseFloat(payRate),
+        pay_rate: numericPayRate,
         shift_date: finalDate,
         transport_info: transportInfo,
         meal_info: mealInfo,
@@ -698,15 +717,17 @@ export default function App() {
     const bairroFinal = editingShift.shift_neighborhood || profile?.neighborhood || ''
     const ruaFinal = editingShift.shift_street || profile?.address || ''
     const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${profile?.city || 'Cidade'}/${profile?.state || ''}`
+    const numericPayRate = parseFloat(String(editingShift.pay_rate).replace(',', '.'))
 
     const { error } = await supabase
       .from('shifts')
       .update({
+        post_type: editingShift.post_type,
         title: editingShift.title,
         vacancies: parseInt(editingShift.vacancies, 10) || 1,
         workload: isJob ? editingShift.work_schedule : editingShift.workload,
         shift_hours: editingShift.shift_hours,
-        pay_rate: parseFloat(editingShift.pay_rate),
+        pay_rate: numericPayRate,
         shift_date: editingShift.shift_date ? new Date(editingShift.shift_date).toISOString() : new Date().toISOString(),
         transport_info: editingShift.transport_info,
         meal_info: editingShift.meal_info,
@@ -1311,7 +1332,6 @@ export default function App() {
   const myReputation = getReputationStats(session.user.id)
   const myCompletedCount = applications.filter((a) => a.status === 'accepted' && (a.company_confirmed_end || a.worker_confirmed_end)).length
 
-  // Separação estrita: Turnos ('shift') vs Vagas de Trabalho ('job')
   const isJobsTab = activeTab === 'jobs'
   const filteredListings = shifts.filter((item) => {
     const itemType = item.post_type || 'shift'
@@ -1438,10 +1458,11 @@ export default function App() {
                             <label className="block text-xs text-neutral-400 mb-1">Horário de Trabalho</label>
                             <input
                               type="text"
+                              inputMode="numeric"
                               required
-                              placeholder="Ex: 08:00 às 17:00"
+                              placeholder="09:00 às 17:00"
                               value={shiftHours}
-                              onChange={(e) => setShiftHours(e.target.value)}
+                              onChange={(e) => setShiftHours(formatShiftHoursMask(e.target.value))}
                               className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
                             />
                           </div>
@@ -1487,7 +1508,15 @@ export default function App() {
 
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">Horário do Turno</label>
-                            <input type="text" required placeholder="18:00 às 00:00" value={shiftHours} onChange={(e) => setShiftHours(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              placeholder="18:00 às 00:00"
+                              value={shiftHours}
+                              onChange={(e) => setShiftHours(formatShiftHoursMask(e.target.value))}
+                              className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                            />
                           </div>
 
                           <div>
@@ -1652,7 +1681,7 @@ export default function App() {
 
                               <div className="mt-1.5 flex items-baseline gap-1">
                                 <span className="text-2xl font-black text-[#4d7c0f] tracking-tight">
-                                  R$ {Number(shift.pay_rate).toFixed(2).replace('.', ',')}
+                                  R$ {formatCurrencyBRL(shift.pay_rate)}
                                 </span>
                                 <span className="text-xs font-semibold text-neutral-500">
                                   {itemIsJob ? (shift.salary_period || '/ mês') : '/ turno'}
@@ -1772,7 +1801,7 @@ export default function App() {
                             <div>
                               <span className="text-xs font-extrabold text-[#4d7c0f] uppercase tracking-wide">
                                 {appIsJob ? 'VAGA • ' : 'TURNO • '}
-                                {app.shift?.title} • R$ {Number(app.shift?.pay_rate || 0).toFixed(2).replace('.', ',')}
+                                {app.shift?.title} • R$ {formatCurrencyBRL(app.shift?.pay_rate || 0)}
                               </span>
                               {isCompany ? (
                                 <div className="flex items-center gap-3 mt-2.5">
@@ -2129,7 +2158,7 @@ export default function App() {
                   </div>
                   <div className="text-right">
                     <span className="text-[#4d7c0f] font-black text-xl block">
-                      R$ {Number(selectedShiftModal.pay_rate).toFixed(2).replace('.', ',')}
+                      R$ {formatCurrencyBRL(selectedShiftModal.pay_rate)}
                     </span>
                     <span className="text-[11px] text-neutral-500 font-bold">
                       {modalIsJob ? (selectedShiftModal.salary_period || '/ mês') : '/ turno'}
@@ -2348,9 +2377,15 @@ export default function App() {
                       <label className="block text-xs text-neutral-400 mb-1">Horário</label>
                       <input
                         type="text"
+                        inputMode="numeric"
                         required
                         value={editingShift.shift_hours}
-                        onChange={(e) => setEditingShift({ ...editingShift, shift_hours: e.target.value })}
+                        onChange={(e) =>
+                          setEditingShift({
+                            ...editingShift,
+                            shift_hours: formatShiftHoursMask(e.target.value)
+                          })
+                        }
                         className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
                       />
                     </div>
@@ -2401,9 +2436,15 @@ export default function App() {
                       <label className="block text-xs text-neutral-400 mb-1">Horário</label>
                       <input
                         type="text"
+                        inputMode="numeric"
                         required
                         value={editingShift.shift_hours}
-                        onChange={(e) => setEditingShift({ ...editingShift, shift_hours: e.target.value })}
+                        onChange={(e) =>
+                          setEditingShift({
+                            ...editingShift,
+                            shift_hours: formatShiftHoursMask(e.target.value)
+                          })
+                        }
                         className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
                       />
                     </div>
