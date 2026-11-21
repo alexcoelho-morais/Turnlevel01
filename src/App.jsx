@@ -32,6 +32,40 @@ function formatCurrencyBRL(value) {
   })
 }
 
+function formatCnpjMask(rawValue) {
+  const digits = (rawValue || '').replace(/\D/g, '').slice(0, 14)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`
+  if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`
+  if (digits.length <= 12) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`
+  }
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`
+}
+
+function isValidCnpj(rawCnpj) {
+  const cnpjDigits = (rawCnpj || '').replace(/\D/g, '')
+  if (cnpjDigits.length !== 14) return false
+  if (/^(\d)\1{13}$/.test(cnpjDigits)) return false
+
+  const calcDigit = (base, weights) => {
+    const sum = base
+      .split('')
+      .reduce((acc, char, idx) => acc + Number(char) * weights[idx], 0)
+    const remainder = sum % 11
+    return remainder < 2 ? 0 : 11 - remainder
+  }
+
+  const weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  const weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+
+  const digit1 = calcDigit(cnpjDigits.slice(0, 12), weights1)
+  if (digit1 !== Number(cnpjDigits[12])) return false
+
+  const digit2 = calcDigit(cnpjDigits.slice(0, 13), weights2)
+  return digit2 === Number(cnpjDigits[13])
+}
+
 const BRAZIL_DDDS = [
   '11', '12', '13', '14', '15', '16', '17', '18', '19',
   '21', '22', '24', '27', '28',
@@ -122,6 +156,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
 
+  const [showInstallGuide, setShowInstallGuide] = useState(false)
   const [legalModal, setLegalModal] = useState(null)
 
   const [role, setRole] = useState('worker')
@@ -317,7 +352,7 @@ export default function App() {
     setPhone(prof.phone || '')
     setBio(prof.bio || '')
     setAvatarPreview(prof.avatar_url || '')
-    setCnpj(prof.cnpj || '')
+    setCnpj(prof.cnpj ? formatCnpjMask(prof.cnpj) : '')
     setSector(prof.sector || '')
     setCpf(prof.cpf || '')
     setAge(prof.age ? String(prof.age) : '20')
@@ -429,10 +464,26 @@ export default function App() {
     setAuthLoading(false)
   }
 
+  function handleAdvanceFromStep2(e) {
+    e.preventDefault()
+    setAuthError('')
+    if (role === 'company' && !isValidCnpj(cnpj)) {
+      setAuthError('Informe um CNPJ válido (14 dígitos e dígitos verificadores corretos).')
+      return
+    }
+    setSignupStep(3)
+  }
+
   async function handleCompleteSignup(e) {
     e.preventDefault()
     setAuthLoading(true)
     setAuthError('')
+
+    if (role === 'company' && !isValidCnpj(cnpj)) {
+      setAuthError('CNPJ inválido. Verifique os números informados antes de concluir.')
+      setAuthLoading(false)
+      return
+    }
 
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
@@ -485,6 +536,7 @@ export default function App() {
       }
 
       await loadUserData(userId)
+      setShowInstallGuide(true)
     }
     setAuthLoading(false)
   }
@@ -492,11 +544,17 @@ export default function App() {
   async function handleUpdateProfile(e) {
     e.preventDefault()
     if (!session) return
+    const currentRole = profile?.role || role
+
+    if (currentRole === 'company' && !isValidCnpj(cnpj)) {
+      alert('CNPJ inválido. Digite um CNPJ válido para salvar.')
+      return
+    }
+
     setAuthLoading(true)
 
     const uploadedUrl = await uploadAvatar(session.user.id)
     const finalSkills = buildFinalSkillsString()
-    const currentRole = profile?.role || role
     const whatsappE164 = buildWhatsappE164(phoneDdd, phone)
 
     const updates = {
@@ -848,6 +906,84 @@ export default function App() {
     }
   }
 
+  const renderInstallGuideModal = () => {
+    if (!showInstallGuide) return null
+    return (
+      <div
+        className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={() => setShowInstallGuide(false)}
+      >
+        <div
+          className="bg-[#111111] border border-lime-400/40 text-white rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex justify-between items-start gap-2 border-b border-neutral-800 pb-3">
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2.5 py-0.5 rounded-full">
+                Conta criada com sucesso
+              </span>
+              <h3 className="font-extrabold text-white text-lg mt-1.5">
+                Adicione o TurnLevel na Tela Inicial
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowInstallGuide(false)}
+              aria-label="Fechar guia"
+              className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold flex items-center justify-center shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-4 space-y-2">
+            <p className="text-xs font-extrabold text-lime-400 uppercase tracking-wider">
+              Vantagens na tela do celular
+            </p>
+            <ul className="text-xs text-neutral-300 space-y-1.5">
+              <li>• <strong>Acesso com 1 toque:</strong> abra direto da tela inicial sem digitar link ou abrir abas.</li>
+              <li>• <strong>Mais espaço e fluidez:</strong> abre em tela cheia como aplicativo.</li>
+              <li>• <strong>Mais praticidade nos alertas:</strong> facilita acompanhar turnos, vagas e notificações.</li>
+            </ul>
+          </div>
+
+          <div className="space-y-2.5 text-xs text-neutral-300">
+            <div className="bg-[#050505] border border-neutral-800/90 rounded-2xl p-3.5 space-y-1">
+              <p className="font-extrabold text-white">No Android (Chrome)</p>
+              <p className="text-neutral-400">
+                Toque nos <strong className="text-white">3 pontinhos (⋮)</strong> no canto superior e escolha <strong className="text-lime-400">Adicionar à tela inicial</strong> ou <strong className="text-lime-400">Instalar aplicativo</strong>.
+              </p>
+            </div>
+
+            <div className="bg-[#050505] border border-neutral-800/90 rounded-2xl p-3.5 space-y-1">
+              <p className="font-extrabold text-white">No iPhone (Safari)</p>
+              <p className="text-neutral-400">
+                Toque no botão de <strong className="text-white">Compartilhar</strong> e role até <strong className="text-lime-400">Adicionar à Tela de Início</strong>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowInstallGuide(false)}
+              className="w-1/3 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 font-bold text-xs py-3.5 rounded-xl border border-neutral-800 transition"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowInstallGuide(false)}
+              className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition"
+            >
+              Entendi, ir para o app →
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderLegalFooter = () => (
     <div className="text-center pb-2 pt-4 relative z-10 space-y-1">
       <div className="flex items-center justify-center gap-4 text-[11px] text-neutral-400">
@@ -1172,7 +1308,7 @@ export default function App() {
               </div>
 
               {signupStep === 1 && (
-                <form onSubmit={(e) => { e.preventDefault(); setSignupStep(2) }} className="space-y-4">
+                <form onSubmit={(e) => { e.preventDefault(); setAuthError(''); setSignupStep(2) }} className="space-y-4">
                   <div>
                     <label className="block text-xs text-neutral-400 mb-1">Email de acesso</label>
                     <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white" />
@@ -1190,7 +1326,7 @@ export default function App() {
               )}
 
               {signupStep === 2 && (
-                <form onSubmit={(e) => { e.preventDefault(); setSignupStep(3) }} className="space-y-3">
+                <form onSubmit={handleAdvanceFromStep2} className="space-y-3">
                   <div className="flex items-center gap-4 bg-[#050505] p-4 rounded-2xl border border-neutral-800">
                     <div className="relative group cursor-pointer">
                       {avatarPreview ? (
@@ -1220,8 +1356,16 @@ export default function App() {
                   {role === 'company' ? (
                     <>
                       <div>
-                        <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
-                        <input type="text" inputMode="numeric" required placeholder="00.000.000/0001-00" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        <label className="block text-xs text-neutral-400 mb-1">CNPJ Válido</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          required
+                          placeholder="00.000.000/0001-00"
+                          value={cnpj}
+                          onChange={(e) => { setCnpj(formatCnpjMask(e.target.value)); setAuthError('') }}
+                          className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                        />
                       </div>
                       <div>
                         <label className="block text-xs text-neutral-400 mb-1">Telefone / WhatsApp</label>
@@ -1277,8 +1421,10 @@ export default function App() {
                     </>
                   )}
 
+                  {authError && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl">{authError}</p>}
+
                   <div className="flex gap-2 pt-2">
-                    <button type="button" onClick={() => setSignupStep(1)} className="w-1/3 bg-neutral-800 text-neutral-300 text-sm py-3 rounded-xl">← Voltar</button>
+                    <button type="button" onClick={() => { setAuthError(''); setSignupStep(1) }} className="w-1/3 bg-neutral-800 text-neutral-300 text-sm py-3 rounded-xl">← Voltar</button>
                     <button type="submit" className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3 rounded-xl">Próxima →</button>
                   </div>
                 </form>
@@ -1909,6 +2055,20 @@ export default function App() {
 
             {activeTab === 'profile' && (
               <div className="space-y-6">
+                <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-bold text-white">Atalho na Tela Inicial</h2>
+                    <p className="text-xs text-neutral-400">Veja como fixar o TurnLevel na tela do celular.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowInstallGuide(true)}
+                    className="bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs px-3.5 py-2.5 rounded-xl transition shrink-0"
+                  >
+                    Ver Guia
+                  </button>
+                </section>
+
                 {(profile?.role || role) === 'worker' && !pushEnabled && (
                   <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -2019,8 +2179,8 @@ export default function App() {
                       {(profile?.role || role) === 'company' ? (
                         <>
                           <div>
-                            <label className="block text-xs text-neutral-400 mb-1">CNPJ</label>
-                            <input type="text" inputMode="numeric" value={cnpj} onChange={(e) => setCnpj(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                            <label className="block text-xs text-neutral-400 mb-1">CNPJ Válido</label>
+                            <input type="text" inputMode="numeric" value={cnpj} onChange={(e) => setCnpj(formatCnpjMask(e.target.value))} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">Setor</label>
@@ -2603,6 +2763,7 @@ export default function App() {
         </div>
       )}
 
+      {renderInstallGuideModal()}
       {renderLegalModal()}
 
       <nav className="fixed bottom-0 inset-x-0 bg-[#050505]/95 backdrop-blur-md border-t border-neutral-900 px-3 py-2.5 z-20">
