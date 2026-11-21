@@ -4,6 +4,9 @@ import { supabase } from './supabaseClient'
 const VAPID_PUBLIC_KEY =
   'BKVSS2H3oGVbJKXVePdGR8R6pB_oTDV-XkP14Q_OnTVh5UU01G_e_9RcFXnDBDQP1o-ev29WksUG5wOJSN2PMxQ'
 
+// Conta mestra de testes para alternar entre Empresa e Trabalhador
+const TEST_MASTER_EMAILS = ['turnlevelteste@gmail.com']
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
@@ -25,8 +28,24 @@ function formatShiftHoursMask(rawValue) {
   return `${digits.slice(0, 2)}:${digits.slice(2, 4)} às ${digits.slice(4, 6)}:${digits.slice(6)}`
 }
 
+function parseMoneyInput(rawValue) {
+  if (typeof rawValue === 'number') return Number.isFinite(rawValue) ? rawValue : 0
+  let str = String(rawValue || '').trim().replace(/[^\d.,]/g, '')
+  if (!str) return 0
+
+  if (str.includes(',') && str.includes('.')) {
+    str = str.replace(/\./g, '').replace(',', '.')
+  } else if (str.includes(',')) {
+    str = str.replace(',', '.')
+  }
+
+  const parsed = parseFloat(str)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function formatCurrencyBRL(value) {
-  return Number(value || 0).toLocaleString('pt-BR', {
+  const num = parseMoneyInput(value)
+  return num.toLocaleString('pt-BR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })
@@ -203,7 +222,6 @@ export default function App() {
   const [reviewComment, setReviewComment] = useState('')
   const [submittingReview, setSubmittingReview] = useState(false)
 
-  // Tipo de publicação da empresa: 'shift' (Turno) ou 'job' (Vaga de Emprego)
   const [publishType, setPublishType] = useState('shift')
 
   const [title, setTitle] = useState('')
@@ -219,10 +237,15 @@ export default function App() {
   const [shiftNeighborhood, setShiftNeighborhood] = useState('')
   const [shiftStreet, setShiftStreet] = useState('')
 
-  // Campos exclusivos de Vaga de Trabalho
   const [employmentType, setEmploymentType] = useState('CLT / Efetivo')
   const [workSchedule, setWorkSchedule] = useState('Segunda a Sábado')
   const [salaryPeriod, setSalaryPeriod] = useState('/ mês')
+
+  const isMasterTester = Boolean(
+    session?.user?.email &&
+      TEST_MASTER_EMAILS.map((e) => e.toLowerCase()).includes(session.user.email.toLowerCase())
+  )
+  const activeRole = profile?.role || role
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -256,6 +279,17 @@ export default function App() {
         .catch(() => {})
     }
   }, [session])
+
+  async function handleSwitchMasterRole(nextRole, currentProf = profile) {
+    setRole(nextRole)
+    const updatedProf = currentProf ? { ...currentProf, role: nextRole } : { id: session?.user?.id, role: nextRole }
+    setProfile(updatedProf)
+    if (nextRole === 'company') {
+      setShiftNeighborhood(updatedProf.neighborhood || neighborhood || '')
+      setShiftStreet(updatedProf.address || address || '')
+    }
+    await fetchApplications(updatedProf)
+  }
 
   async function handleActivatePushNotifications() {
     if (!session?.user?.id) return
@@ -544,9 +578,9 @@ export default function App() {
   async function handleUpdateProfile(e) {
     e.preventDefault()
     if (!session) return
-    const currentRole = profile?.role || role
+    const currentRole = activeRole
 
-    if (currentRole === 'company' && !isValidCnpj(cnpj)) {
+    if (currentRole === 'company' && !isMasterTester && !isValidCnpj(cnpj)) {
       alert('CNPJ inválido. Digite um CNPJ válido para salvar.')
       return
     }
@@ -688,18 +722,22 @@ export default function App() {
 
   async function handleCreateShift(e) {
     e.preventDefault()
-    if (!session || !profile) return
+    if (!session) return
 
     const isJob = publishType === 'job'
-    const bairroFinal = shiftNeighborhood || profile.neighborhood || ''
-    const ruaFinal = shiftStreet || profile.address || ''
-    const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${profile.city || 'Cidade'}/${profile.state || ''}`
+    const bairroFinal = shiftNeighborhood || profile?.neighborhood || neighborhood || ''
+    const ruaFinal = shiftStreet || profile?.address || address || ''
+    const cidadeFinal = profile?.city || city || 'Cidade'
+    const ufFinal = profile?.state || stateUf || ''
+    const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${cidadeFinal}${ufFinal ? '/' + ufFinal : ''}`
 
-    const finalDate = isJob
-      ? (shiftDate ? new Date(shiftDate).toISOString() : new Date().toISOString())
-      : new Date(shiftDate).toISOString()
+    const finalDate = shiftDate ? new Date(shiftDate).toISOString() : new Date().toISOString()
 
-    const numericPayRate = parseFloat(String(payRate).replace(',', '.'))
+    const numericPayRate = parseMoneyInput(payRate)
+    if (numericPayRate <= 0) {
+      alert('Informe um valor válido maior que zero.')
+      return
+    }
 
     const { error } = await supabase.from('shifts').insert([
       {
@@ -735,7 +773,7 @@ export default function App() {
       setShiftDate('')
       setRequirements('')
       setActiveTab(isJob ? 'jobs' : 'shifts')
-      fetchShifts(cityFilter, dayFilter)
+      await fetchShifts(cityFilter, dayFilter)
     }
   }
 
@@ -751,7 +789,7 @@ export default function App() {
       vacancies: String(shift.vacancies || 1),
       workload: shift.workload || '6 horas',
       shift_hours: shift.shift_hours || '',
-      pay_rate: String(shift.pay_rate ?? ''),
+      pay_rate: shift.pay_rate !== undefined && shift.pay_rate !== null ? String(shift.pay_rate) : '',
       shift_date: localDate,
       transport_info: shift.transport_info || 'Vale-transporte pago',
       meal_info: shift.meal_info || 'Alimentação no local',
@@ -772,12 +810,14 @@ export default function App() {
     setSavingEdit(true)
 
     const isJob = editingShift.post_type === 'job'
-    const bairroFinal = editingShift.shift_neighborhood || profile?.neighborhood || ''
-    const ruaFinal = editingShift.shift_street || profile?.address || ''
-    const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${profile?.city || 'Cidade'}/${profile?.state || ''}`
-    const numericPayRate = parseFloat(String(editingShift.pay_rate).replace(',', '.'))
+    const bairroFinal = editingShift.shift_neighborhood || profile?.neighborhood || neighborhood || ''
+    const ruaFinal = editingShift.shift_street || profile?.address || address || ''
+    const cidadeFinal = profile?.city || city || 'Cidade'
+    const ufFinal = profile?.state || stateUf || ''
+    const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${cidadeFinal}${ufFinal ? '/' + ufFinal : ''}`
+    const numericPayRate = parseMoneyInput(editingShift.pay_rate)
 
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('shifts')
       .update({
         post_type: editingShift.post_type,
@@ -802,14 +842,18 @@ export default function App() {
       })
       .eq('id', editingShift.id)
       .eq('company_id', session.user.id)
+      .select()
 
     setSavingEdit(false)
+
     if (error) {
       alert('Erro ao atualizar: ' + error.message)
+    } else if (!updatedRows || updatedRows.length === 0) {
+      alert('Nenhuma linha foi atualizada no banco. Verifique as políticas RLS de UPDATE na tabela shifts no Supabase.')
     } else {
       alert('Atualizado com sucesso!')
       setEditingShift(null)
-      fetchShifts(cityFilter, dayFilter)
+      await fetchShifts(cityFilter, dayFilter)
     }
   }
 
@@ -818,18 +862,23 @@ export default function App() {
     const confirmed = window.confirm('Tem certeza que deseja excluir esta publicação permanentemente?')
     if (!confirmed) return
 
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from('shifts')
       .delete()
       .eq('id', shiftId)
       .eq('company_id', session.user.id)
+      .select()
 
     if (error) {
       alert('Erro ao excluir: ' + error.message)
+    } else if (!deletedRows || deletedRows.length === 0) {
+      alert('Não foi possível excluir no banco. Verifique as políticas RLS de DELETE na tabela shifts no Supabase.')
     } else {
       alert('Excluído com sucesso!')
-      setShifts((prev) => prev.filter((s) => s.id !== shiftId))
-      fetchApplications(profile)
+      await Promise.all([
+        fetchShifts(cityFilter, dayFilter),
+        fetchApplications(profile)
+      ])
     }
   }
 
@@ -862,7 +911,7 @@ export default function App() {
   }
 
   async function handleConfirmShiftEndAndOpenReview(app) {
-    const isCompany = (profile?.role || role) === 'company'
+    const isCompany = activeRole === 'company'
     const updates = isCompany
       ? { company_confirmed_end: true, completed_at: new Date().toISOString() }
       : { worker_confirmed_end: true, completed_at: new Date().toISOString() }
@@ -880,7 +929,7 @@ export default function App() {
     if (!reviewModalApp || !session) return
     setSubmittingReview(true)
 
-    const isCompany = (profile?.role || role) === 'company'
+    const isCompany = activeRole === 'company'
     const reviewedId = isCompany ? reviewModalApp.worker_id : reviewModalApp.shift?.company_id
 
     const { error } = await supabase.from('reviews').insert([
@@ -1487,8 +1536,31 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#050505] text-white pb-24">
       <header className="bg-[#050505]/90 backdrop-blur-md border-b border-neutral-900 sticky top-0 z-10 px-4 py-3.5">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
+        <div className="max-w-4xl mx-auto flex justify-between items-center gap-2">
           <TurnLevelLogo size="md" />
+
+          {isMasterTester && (
+            <div className="flex items-center bg-[#111111] border border-lime-400/40 rounded-xl p-0.5">
+              <button
+                type="button"
+                onClick={() => handleSwitchMasterRole('company')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition ${
+                  activeRole === 'company' ? 'bg-lime-400 text-black' : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                Teste Empresa
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchMasterRole('worker')}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition ${
+                  activeRole === 'worker' ? 'bg-lime-400 text-black' : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                Teste Trabalhador
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
@@ -1519,7 +1591,7 @@ export default function App() {
           <>
             {(activeTab === 'shifts' || activeTab === 'jobs') && (
               <div className="space-y-6">
-                {(profile?.role || role) === 'company' && (
+                {activeRole === 'company' && (
                   <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
@@ -1617,11 +1689,10 @@ export default function App() {
                             <label className="block text-xs text-neutral-400 mb-1">Salário / Remuneração (R$)</label>
                             <div className="flex gap-2">
                               <input
-                                type="number"
+                                type="text"
                                 inputMode="decimal"
-                                step="0.01"
                                 required
-                                placeholder="1800.00"
+                                placeholder="2000 ou 2000,00"
                                 value={payRate}
                                 onChange={(e) => setPayRate(e.target.value)}
                                 className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
@@ -1667,7 +1738,15 @@ export default function App() {
 
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">Valor do Turno (R$)</label>
-                            <input type="number" inputMode="decimal" step="0.01" required placeholder="120.00" value={payRate} onChange={(e) => setPayRate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              required
+                              placeholder="120 ou 120,00"
+                              value={payRate}
+                              onChange={(e) => setPayRate(e.target.value)}
+                              className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                            />
                           </div>
 
                           <div>
@@ -1864,7 +1943,7 @@ export default function App() {
                             </div>
 
                             <div className="pt-1 space-y-2" onClick={(e) => e.stopPropagation()}>
-                              {(profile?.role || role) === 'worker' ? (
+                              {activeRole === 'worker' ? (
                                 shift.status !== 'open' ? (
                                   <div className="w-full text-center text-xs font-bold bg-neutral-200 text-neutral-600 py-3 rounded-2xl">
                                     Vaga Preenchida
@@ -1916,7 +1995,7 @@ export default function App() {
             {activeTab === 'applications' && (
               <section className="space-y-4">
                 <h2 className="text-lg font-bold text-white">
-                  {(profile?.role || role) === 'company' ? 'Candidatos & Turnos Ativos' : 'Minhas Candidaturas'}
+                  {activeRole === 'company' ? 'Candidatos & Turnos Ativos' : 'Minhas Candidaturas'}
                 </h2>
                 {applications.length === 0 ? (
                   <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
@@ -1926,7 +2005,7 @@ export default function App() {
                   <div className="space-y-4">
                     {applications.map((app) => {
                       const isAccepted = app.status === 'accepted'
-                      const isCompany = (profile?.role || role) === 'company'
+                      const isCompany = activeRole === 'company'
                       const companyPhone = app.shift?.company?.phone_ddd && app.shift?.company?.phone ? `55${app.shift.company.phone_ddd}${app.shift.company.phone.replace(/\D/g, '')}` : ''
                       const workerPhone = app.worker?.phone_ddd && app.worker?.phone ? `55${app.worker.phone_ddd}${app.worker.phone.replace(/\D/g, '')}` : ''
                       const workerRep = app.worker ? getReputationStats(app.worker.id) : { avg: null, count: 0 }
@@ -2069,7 +2148,7 @@ export default function App() {
                   </button>
                 </section>
 
-                {(profile?.role || role) === 'worker' && !pushEnabled && (
+                {activeRole === 'worker' && !pushEnabled && (
                   <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
@@ -2176,7 +2255,7 @@ export default function App() {
                           <input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                       </div>
-                      {(profile?.role || role) === 'company' ? (
+                      {activeRole === 'company' ? (
                         <>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">CNPJ Válido</label>
@@ -2372,7 +2451,7 @@ export default function App() {
                 </div>
               </div>
 
-              {(profile?.role || role) === 'worker' && selectedShiftModal.status === 'open' && (
+              {activeRole === 'worker' && selectedShiftModal.status === 'open' && (
                 <div className="pt-2">
                   {applications.some((a) => a.shift_id === selectedShiftModal.id) ? (
                     <div className="w-full text-center py-3.5 rounded-2xl bg-black text-lime-400 text-xs font-extrabold">
@@ -2554,10 +2633,10 @@ export default function App() {
                       <label className="block text-xs text-neutral-400 mb-1">Salário (R$)</label>
                       <div className="flex gap-2">
                         <input
-                          type="number"
+                          type="text"
                           inputMode="decimal"
-                          step="0.01"
                           required
+                          placeholder="2000 ou 2000,00"
                           value={editingShift.pay_rate}
                           onChange={(e) => setEditingShift({ ...editingShift, pay_rate: e.target.value })}
                           className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
@@ -2612,10 +2691,10 @@ export default function App() {
                     <div>
                       <label className="block text-xs text-neutral-400 mb-1">Valor (R$)</label>
                       <input
-                        type="number"
+                        type="text"
                         inputMode="decimal"
-                        step="0.01"
                         required
+                        placeholder="120 ou 120,00"
                         value={editingShift.pay_rate}
                         onChange={(e) => setEditingShift({ ...editingShift, pay_rate: e.target.value })}
                         className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
@@ -2784,7 +2863,7 @@ export default function App() {
             onClick={() => { setActiveTab('applications'); fetchApplications(profile); fetchAllReviews() }}
             className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'applications' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
           >
-            {(profile?.role || role) === 'company' ? 'Candidatos' : 'Candidaturas'}
+            {activeRole === 'company' ? 'Candidatos' : 'Candidaturas'}
           </button>
           <button
             onClick={() => { setActiveTab('profile'); fetchAllReviews() }}
