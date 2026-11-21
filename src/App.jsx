@@ -4,7 +4,6 @@ import { supabase } from './supabaseClient'
 const VAPID_PUBLIC_KEY =
   'BKVSS2H3oGVbJKXVePdGR8R6pB_oTDV-XkP14Q_OnTVh5UU01G_e_9RcFXnDBDQP1o-ev29WksUG5wOJSN2PMxQ'
 
-// Conta mestra de testes para alternar entre Empresa e Trabalhador
 const TEST_MASTER_EMAILS = ['turnlevelteste@gmail.com']
 
 function urlBase64ToUint8Array(base64String) {
@@ -51,6 +50,18 @@ function formatCurrencyBRL(value) {
   })
 }
 
+function maskDocument(doc, type = 'cpf') {
+  const digits = (doc || '').replace(/\D/g, '')
+  if (!digits) return 'Verificado'
+  if (type === 'cnpj' && digits.length === 14) {
+    return `**.***.${digits.slice(5, 8)}/${digits.slice(8, 12)}-**`
+  }
+  if (digits.length >= 11) {
+    return `***.***.${digits.slice(6, 9)}-**`
+  }
+  return 'Verificado'
+}
+
 function formatCnpjMask(rawValue) {
   const digits = (rawValue || '').replace(/\D/g, '').slice(0, 14)
   if (digits.length <= 2) return digits
@@ -83,6 +94,28 @@ function isValidCnpj(rawCnpj) {
 
   const digit2 = calcDigit(cnpjDigits.slice(0, 13), weights2)
   return digit2 === Number(cnpjDigits[13])
+}
+
+async function geocodeAddressText(street, neighborhood, city, stateUf) {
+  try {
+    const query = encodeURIComponent(
+      `${street ? street + ', ' : ''}${neighborhood ? neighborhood + ', ' : ''}${city || ''}, ${stateUf || ''}, Brasil`
+    )
+    const geoRes = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${query}`,
+      { headers: { 'Accept-Language': 'pt-BR' } }
+    )
+    const geoData = await geoRes.json()
+    if (Array.isArray(geoData) && geoData[0]) {
+      return {
+        latitude: parseFloat(geoData[0].lat),
+        longitude: parseFloat(geoData[0].lon)
+      }
+    }
+  } catch (err) {
+    console.error('Erro geocodificação:', err)
+  }
+  return { latitude: null, longitude: null }
 }
 
 const BRAZIL_DDDS = [
@@ -174,6 +207,7 @@ export default function App() {
   const [signupStep, setSignupStep] = useState(1)
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [resetMessage, setResetMessage] = useState('')
 
   const [showInstallGuide, setShowInstallGuide] = useState(false)
   const [legalModal, setLegalModal] = useState(null)
@@ -455,17 +489,10 @@ export default function App() {
           setNeighborhood(bairro)
           setAddress(rua)
 
-          const query = encodeURIComponent(
-            `${rua ? rua + ', ' : ''}${bairro ? bairro + ', ' : ''}${loc}, ${uf}, Brasil`
-          )
-          const geoRes = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${query}`,
-            { headers: { 'Accept-Language': 'pt-BR' } }
-          )
-          const geoData = await geoRes.json()
-          if (Array.isArray(geoData) && geoData[0]) {
-            setLatitude(parseFloat(geoData[0].lat))
-            setLongitude(parseFloat(geoData[0].lon))
+          const coords = await geocodeAddressText(rua, bairro, loc, uf)
+          if (coords.latitude && coords.longitude) {
+            setLatitude(coords.latitude)
+            setLongitude(coords.longitude)
           }
         }
       } catch (err) {
@@ -495,6 +522,26 @@ export default function App() {
     setAuthError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) setAuthError(error.message)
+    setAuthLoading(false)
+  }
+
+  async function handleResetPassword(e) {
+    e.preventDefault()
+    if (!email) {
+      setAuthError('Digite seu e-mail acima para receber o link de recuperação.')
+      return
+    }
+    setAuthLoading(true)
+    setAuthError('')
+    setResetMessage('')
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    })
+    if (error) {
+      setAuthError(error.message)
+    } else {
+      setResetMessage(`Enviamos um link de redefinição de senha para ${email}.`)
+    }
     setAuthLoading(false)
   }
 
@@ -537,6 +584,14 @@ export default function App() {
       const finalSkills = buildFinalSkillsString()
       const whatsappE164 = buildWhatsappE164(phoneDdd, phone)
 
+      let finalLat = latitude
+      let finalLon = longitude
+      if (!finalLat || !finalLon) {
+        const coords = await geocodeAddressText(address, neighborhood, city, stateUf)
+        finalLat = coords.latitude
+        finalLon = coords.longitude
+      }
+
       const profilePayload = {
         id: userId,
         full_name: fullName,
@@ -557,8 +612,8 @@ export default function App() {
         city,
         neighborhood,
         address,
-        latitude,
-        longitude
+        latitude: finalLat,
+        longitude: finalLon
       }
 
       await supabase.from('profiles').upsert(profilePayload)
@@ -591,6 +646,14 @@ export default function App() {
     const finalSkills = buildFinalSkillsString()
     const whatsappE164 = buildWhatsappE164(phoneDdd, phone)
 
+    let finalLat = latitude ?? profile?.latitude ?? null
+    let finalLon = longitude ?? profile?.longitude ?? null
+    if (!finalLat || !finalLon) {
+      const coords = await geocodeAddressText(address, neighborhood, city, stateUf)
+      finalLat = coords.latitude
+      finalLon = coords.longitude
+    }
+
     const updates = {
       id: session.user.id,
       role: currentRole,
@@ -611,8 +674,8 @@ export default function App() {
       city,
       neighborhood,
       address,
-      latitude: latitude ?? profile?.latitude ?? null,
-      longitude: longitude ?? profile?.longitude ?? null
+      latitude: finalLat,
+      longitude: finalLon
     }
 
     const { error } = await supabase.from('profiles').upsert(updates)
@@ -730,13 +793,20 @@ export default function App() {
     const cidadeFinal = profile?.city || city || 'Cidade'
     const ufFinal = profile?.state || stateUf || ''
     const locationLabel = `${bairroFinal ? bairroFinal + ' - ' : ''}${cidadeFinal}${ufFinal ? '/' + ufFinal : ''}`
-
     const finalDate = shiftDate ? new Date(shiftDate).toISOString() : new Date().toISOString()
 
     const numericPayRate = parseMoneyInput(payRate)
     if (numericPayRate <= 0) {
       alert('Informe um valor válido maior que zero.')
       return
+    }
+
+    let shiftLat = profile?.latitude ?? latitude ?? null
+    let shiftLon = profile?.longitude ?? longitude ?? null
+    const geocoded = await geocodeAddressText(ruaFinal, bairroFinal, cidadeFinal, ufFinal)
+    if (geocoded.latitude && geocoded.longitude) {
+      shiftLat = geocoded.latitude
+      shiftLon = geocoded.longitude
     }
 
     const { error } = await supabase.from('shifts').insert([
@@ -759,7 +829,9 @@ export default function App() {
         description: requirements,
         shift_neighborhood: bairroFinal,
         shift_street: ruaFinal,
-        location: locationLabel
+        location: locationLabel,
+        latitude: shiftLat,
+        longitude: shiftLon
       }
     ])
 
@@ -849,7 +921,7 @@ export default function App() {
     if (error) {
       alert('Erro ao atualizar: ' + error.message)
     } else if (!updatedRows || updatedRows.length === 0) {
-      alert('Nenhuma linha foi atualizada no banco. Verifique as políticas RLS de UPDATE na tabela shifts no Supabase.')
+      alert('Nenhuma linha foi atualizada no banco. Rode o SQL de políticas RLS no Supabase.')
     } else {
       alert('Atualizado com sucesso!')
       setEditingShift(null)
@@ -872,7 +944,7 @@ export default function App() {
     if (error) {
       alert('Erro ao excluir: ' + error.message)
     } else if (!deletedRows || deletedRows.length === 0) {
-      alert('Não foi possível excluir no banco. Verifique as políticas RLS de DELETE na tabela shifts no Supabase.')
+      alert('Não foi possível excluir no banco. Rode o SQL de políticas RLS no Supabase.')
     } else {
       alert('Excluído com sucesso!')
       await Promise.all([
@@ -902,7 +974,17 @@ export default function App() {
     const { error } = await supabase.from('shift_applications').update({ status: newStatus }).eq('id', appId)
     if (!error) {
       if (newStatus === 'accepted') {
-        await supabase.from('shifts').update({ status: 'filled' }).eq('id', shiftId)
+        const targetShift = shifts.find((s) => s.id === shiftId)
+        const totalVacancies = Number(targetShift?.vacancies || 1)
+        const { count: acceptedCount } = await supabase
+          .from('shift_applications')
+          .select('*', { count: 'exact', head: true })
+          .eq('shift_id', shiftId)
+          .eq('status', 'accepted')
+
+        if ((acceptedCount || 0) >= totalVacancies) {
+          await supabase.from('shifts').update({ status: 'filled' }).eq('id', shiftId)
+        }
       }
       setSelectedWorkerModal(null)
       fetchApplications(profile)
@@ -1223,7 +1305,7 @@ export default function App() {
 
                 <div className="pt-2 border-t border-neutral-800/80 text-center">
                   <button
-                    onClick={() => { setAuthView('login'); setAuthError('') }}
+                    onClick={() => { setAuthView('login'); setAuthError(''); setResetMessage('') }}
                     className="text-xs text-neutral-400 hover:text-white transition"
                   >
                     Já tem cadastro? <span className="text-lime-400 font-extrabold underline">Entrar na conta</span>
@@ -1318,17 +1400,27 @@ export default function App() {
                   <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white transition" />
                 </div>
                 <div>
-                  <label className="block text-xs text-neutral-400 mb-1">Senha</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs text-neutral-400">Senha</label>
+                    <button
+                      type="button"
+                      onClick={handleResetPassword}
+                      className="text-[11px] text-lime-400 hover:underline font-semibold"
+                    >
+                      Esqueci minha senha
+                    </button>
+                  </div>
                   <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white transition" />
                 </div>
 
                 {authError && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-xl">{authError}</p>}
+                {resetMessage && <p className="text-xs text-lime-400 bg-lime-400/10 border border-lime-400/30 p-3 rounded-xl">{resetMessage}</p>}
 
                 <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.25)]">
                   {authLoading ? 'A entrar...' : 'Entrar'}
                 </button>
 
-                <button type="button" onClick={() => { setAuthView('welcome'); setAuthError('') }} className="w-full text-center text-xs text-neutral-400 hover:text-white pt-2">
+                <button type="button" onClick={() => { setAuthView('welcome'); setAuthError(''); setResetMessage('') }} className="w-full text-center text-xs text-neutral-400 hover:text-white pt-2">
                   Ainda não tem conta? <span className="text-lime-400 font-semibold">Criar cadastro grátis</span>
                 </button>
               </form>
@@ -1583,6 +1675,12 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {isMasterTester && (
+        <div className="bg-lime-400/10 border-b border-lime-400/25 px-4 py-1.5 text-center text-[11px] font-bold text-lime-400">
+          Conta Mestra Ativa • Visualizando como: {activeRole === 'company' ? 'EMPRESA' : 'TRABALHADOR'}
+        </div>
+      )}
 
       <main className="max-w-4xl mx-auto p-4 space-y-6">
         {loadingProfile ? (
@@ -2363,7 +2461,7 @@ export default function App() {
                     <p className="text-xs font-extrabold text-amber-600">
                       {compRep.avg ? `★ ${compRep.avg} • ${compRep.count} avaliações` : 'Empresa recém-cadastrada'}
                     </p>
-                    <p className="text-xs text-neutral-500">CNPJ: {selectedShiftModal.company?.cnpj || 'Não informado'}</p>
+                    <p className="text-xs text-neutral-500">CNPJ: {maskDocument(selectedShiftModal.company?.cnpj, 'cnpj')}</p>
                   </div>
                 </div>
                 <button onClick={() => setSelectedShiftModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
@@ -2497,7 +2595,7 @@ export default function App() {
               </div>
 
               <div className="space-y-2 text-xs bg-neutral-100 p-4 rounded-2xl">
-                <p className="text-neutral-800"><strong>CPF:</strong> {selectedWorkerModal.worker.cpf || 'Não informado'}</p>
+                <p className="text-neutral-800"><strong>CPF:</strong> {maskDocument(selectedWorkerModal.worker.cpf, 'cpf')}</p>
                 <p className="text-neutral-800"><strong>WhatsApp:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
                 <p className="text-neutral-800"><strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
                 <p className="text-neutral-800"><strong>Raio:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
