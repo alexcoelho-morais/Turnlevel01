@@ -201,6 +201,7 @@ export default function App() {
   const [pushLoading, setPushLoading] = useState(false)
   const [pushStatus, setPushStatus] = useState('')
   const [pushEnabled, setPushEnabled] = useState(false)
+  const [showPushPromptModal, setShowPushPromptModal] = useState(false)
 
   const [authView, setAuthView] = useState('welcome')
   const [howItWorksTab, setHowItWorksTab] = useState('worker')
@@ -308,6 +309,8 @@ export default function App() {
           if (sub) {
             setPushEnabled(true)
             setPushStatus('Notificações ativas neste dispositivo ✓')
+          } else if (Notification.permission === 'default') {
+            setShowPushPromptModal(true)
           }
         })
         .catch(() => {})
@@ -377,9 +380,16 @@ export default function App() {
 
       if (error) throw error
 
+      // Dispara um push de confirmação imediato para validar o celular na hora
+      await supabase.functions.invoke('notify-nearby-workers', {
+        body: {
+          test_subscription: { endpoint, p256dh, auth }
+        }
+      }).catch(() => {})
+
       setPushEnabled(true)
+      setShowPushPromptModal(false)
       setPushStatus('Notificações ativas neste dispositivo ✓')
-      alert('Alertas de vagas no raio de 20 km ativados com sucesso!')
     } catch (err) {
       console.error('Erro ao ativar push:', err)
       setPushStatus('Erro ao ativar notificações.')
@@ -625,7 +635,11 @@ export default function App() {
       }
 
       await loadUserData(userId)
-      setShowInstallGuide(true)
+      if (role === 'worker') {
+        setShowPushPromptModal(true)
+      } else {
+        setShowInstallGuide(true)
+      }
     }
     setAuthLoading(false)
   }
@@ -921,7 +935,7 @@ export default function App() {
     if (error) {
       alert('Erro ao atualizar: ' + error.message)
     } else if (!updatedRows || updatedRows.length === 0) {
-      alert('Nenhuma linha foi atualizada no banco. Rode o SQL de políticas RLS no Supabase.')
+      alert('Nenhuma linha foi atualizada no banco.')
     } else {
       alert('Atualizado com sucesso!')
       setEditingShift(null)
@@ -944,7 +958,7 @@ export default function App() {
     if (error) {
       alert('Erro ao excluir: ' + error.message)
     } else if (!deletedRows || deletedRows.length === 0) {
-      alert('Não foi possível excluir no banco. Rode o SQL de políticas RLS no Supabase.')
+      alert('Não foi possível excluir no banco.')
     } else {
       alert('Excluído com sucesso!')
       await Promise.all([
@@ -1037,6 +1051,67 @@ export default function App() {
     }
   }
 
+  const renderPushPromptModal = () => {
+    if (!showPushPromptModal || pushEnabled || activeRole !== 'worker') return null
+    return (
+      <div
+        className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={() => setShowPushPromptModal(false)}
+      >
+        <div
+          className="bg-[#111111] border border-lime-400/50 text-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex justify-between items-start gap-2">
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2.5 py-0.5 rounded-full">
+                Aviso de Oportunidades
+              </span>
+              <h3 className="font-extrabold text-white text-lg mt-2">
+                Receber alertas de turnos no raio de 20 km?
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPushPromptModal(false)}
+              className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold flex items-center justify-center shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+
+          <p className="text-xs text-neutral-300 leading-relaxed">
+            Ative as notificações gratuitas agora para ser avisado no celular assim que uma empresa publicar um turno ou vaga perto de você.
+          </p>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setShowPushPromptModal(false)
+                setShowInstallGuide(true)
+              }}
+              className="w-1/3 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 font-bold text-xs py-3.5 rounded-xl border border-neutral-800 transition"
+            >
+              Agora não
+            </button>
+            <button
+              type="button"
+              disabled={pushLoading}
+              onClick={async () => {
+                await handleActivatePushNotifications()
+                setShowInstallGuide(true)
+              }}
+              className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.25)]"
+            >
+              {pushLoading ? 'Ativando...' : '🔔 Ativar Notificações'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderInstallGuideModal = () => {
     if (!showInstallGuide) return null
     return (
@@ -1051,7 +1126,7 @@ export default function App() {
           <div className="flex justify-between items-start gap-2 border-b border-neutral-800 pb-3">
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2.5 py-0.5 rounded-full">
-                Conta criada com sucesso
+                Atalho no Celular
               </span>
               <h3 className="font-extrabold text-white text-lg mt-1.5">
                 Adicione o TurnLevel na Tela Inicial
@@ -1065,17 +1140,6 @@ export default function App() {
             >
               ✕
             </button>
-          </div>
-
-          <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-4 space-y-2">
-            <p className="text-xs font-extrabold text-lime-400 uppercase tracking-wider">
-              Vantagens na tela do celular
-            </p>
-            <ul className="text-xs text-neutral-300 space-y-1.5">
-              <li>• <strong>Acesso com 1 toque:</strong> abra direto da tela inicial sem digitar link ou abrir abas.</li>
-              <li>• <strong>Mais espaço e fluidez:</strong> abre em tela cheia como aplicativo.</li>
-              <li>• <strong>Mais praticidade nos alertas:</strong> facilita acompanhar turnos, vagas e notificações.</li>
-            </ul>
           </div>
 
           <div className="space-y-2.5 text-xs text-neutral-300">
@@ -1094,22 +1158,13 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setShowInstallGuide(false)}
-              className="w-1/3 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 font-bold text-xs py-3.5 rounded-xl border border-neutral-800 transition"
-            >
-              Fechar
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowInstallGuide(false)}
-              className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition"
-            >
-              Entendi, ir para o app →
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowInstallGuide(false)}
+            className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition"
+          >
+            Entendi, ir para o app →
+          </button>
         </div>
       </div>
     )
@@ -1687,6 +1742,23 @@ export default function App() {
           <p className="text-sm text-neutral-400 text-center py-10">A carregar dados...</p>
         ) : (
           <>
+            {activeRole === 'worker' && !pushEnabled && (
+              <div className="bg-[#111111] border border-lime-400/40 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-extrabold text-white">Alertas de turnos no raio de 20 km</p>
+                  <p className="text-[11px] text-neutral-400">Ative para ser avisado assim que surgir vaga perto de você.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleActivatePushNotifications}
+                  disabled={pushLoading}
+                  className="bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs px-3.5 py-2.5 rounded-xl transition shrink-0"
+                >
+                  {pushLoading ? 'Ativando...' : '🔔 Ativar'}
+                </button>
+              </div>
+            )}
+
             {(activeTab === 'shifts' || activeTab === 'jobs') && (
               <div className="space-y-6">
                 {activeRole === 'company' && (
@@ -2246,7 +2318,7 @@ export default function App() {
                   </button>
                 </section>
 
-                {activeRole === 'worker' && !pushEnabled && (
+                {activeRole === 'worker' && (
                   <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
@@ -2256,7 +2328,7 @@ export default function App() {
                         </p>
                       </div>
                       <span className="text-[10px] font-extrabold bg-lime-400/15 text-lime-400 border border-lime-400/30 px-2.5 py-1 rounded-full shrink-0">
-                        Grátis
+                        {pushEnabled ? 'Ativo' : 'Grátis'}
                       </span>
                     </div>
 
@@ -2266,7 +2338,11 @@ export default function App() {
                       disabled={pushLoading}
                       className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]"
                     >
-                      {pushLoading ? 'Ativando notificações...' : '🔔 Ativar Notificações (20 km)'}
+                      {pushLoading
+                        ? 'Ativando notificações...'
+                        : pushEnabled
+                          ? '🔔 Testar / Reativar Notificação no Celular'
+                          : '🔔 Ativar Notificações (20 km)'}
                     </button>
 
                     {pushStatus && (
@@ -2331,11 +2407,6 @@ export default function App() {
                           Toque aqui para alterar imagem...
                           <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
                         </label>
-                        {avatarFile ? (
-                          <p className="text-[10px] text-lime-400/80 mt-1 truncate max-w-[200px]">✓ {avatarFile.name} pronto</p>
-                        ) : (
-                          <p className="text-[10px] text-neutral-400 mt-1">Recomendado formato quadrado</p>
-                        )}
                       </div>
                     </div>
 
@@ -2940,6 +3011,7 @@ export default function App() {
         </div>
       )}
 
+      {renderPushPromptModal()}
       {renderInstallGuideModal()}
       {renderLegalModal()}
 
