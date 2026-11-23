@@ -199,7 +199,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('shifts')
 
   const [pushLoading, setPushLoading] = useState(false)
-  const [pushStatus, setPushStatus] = useState('')
   const [pushEnabled, setPushEnabled] = useState(false)
   const [showPushPromptModal, setShowPushPromptModal] = useState(false)
 
@@ -306,11 +305,13 @@ export default function App() {
       navigator.serviceWorker.ready
         .then((reg) => reg.pushManager.getSubscription())
         .then((sub) => {
-          if (sub) {
+          if (sub && Notification.permission === 'granted') {
             setPushEnabled(true)
-            setPushStatus('Notificações ativas neste dispositivo ✓')
-          } else if (Notification.permission === 'default') {
-            setShowPushPromptModal(true)
+          } else {
+            setPushEnabled(false)
+            if (Notification.permission === 'default') {
+              setShowPushPromptModal(true)
+            }
           }
         })
         .catch(() => {})
@@ -337,13 +338,11 @@ export default function App() {
     }
 
     setPushLoading(true)
-    setPushStatus('')
 
     try {
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
-        setPushStatus('Permissão de notificação negada.')
-        alert('Ative as notificações nas configurações do aparelho para receber alertas de vagas.')
+        alert('Ative as notificações nas configurações do aparelho para receber alertas.')
         setPushLoading(false)
         return
       }
@@ -380,7 +379,6 @@ export default function App() {
 
       if (error) throw error
 
-      // Dispara um push de confirmação imediato para validar o celular na hora
       await supabase.functions.invoke('notify-nearby-workers', {
         body: {
           test_subscription: { endpoint, p256dh, auth }
@@ -389,10 +387,8 @@ export default function App() {
 
       setPushEnabled(true)
       setShowPushPromptModal(false)
-      setPushStatus('Notificações ativas neste dispositivo ✓')
     } catch (err) {
       console.error('Erro ao ativar push:', err)
-      setPushStatus('Erro ao ativar notificações.')
       alert('Erro ao ativar notificações: ' + (err.message || 'Tente novamente.'))
     }
 
@@ -635,11 +631,7 @@ export default function App() {
       }
 
       await loadUserData(userId)
-      if (role === 'worker') {
-        setShowPushPromptModal(true)
-      } else {
-        setShowInstallGuide(true)
-      }
+      setShowPushPromptModal(true)
     }
     setAuthLoading(false)
   }
@@ -970,6 +962,8 @@ export default function App() {
 
   async function handleApply(shiftId) {
     if (!session) return
+    const targetShift = shifts.find((s) => s.id === shiftId) || selectedShiftModal
+
     const { error } = await supabase.from('shift_applications').insert([
       { shift_id: shiftId, worker_id: session.user.id }
     ])
@@ -978,6 +972,19 @@ export default function App() {
       if (error.code === '23505') alert('Você já se candidatou.')
       else alert('Erro: ' + error.message)
     } else {
+      // Notifica a empresa na hora que alguém se candidatou
+      if (targetShift?.company_id) {
+        const workerName = profile?.full_name || fullName || 'Um trabalhador'
+        const isJob = (targetShift.post_type || 'shift') === 'job'
+        await supabase.functions.invoke('notify-nearby-workers', {
+          body: {
+            direct_user_id: targetShift.company_id,
+            title: isJob ? 'Novo candidato na sua vaga!' : 'Novo candidato no seu turno!',
+            body: `${workerName} se candidatou para "${targetShift.title}". Abra a aba Candidatos para responder.`
+          }
+        }).catch(() => {})
+      }
+
       alert('Candidatura enviada com sucesso.')
       setSelectedShiftModal(null)
       fetchApplications(profile)
@@ -985,10 +992,25 @@ export default function App() {
   }
 
   async function handleApplicationStatus(appId, shiftId, newStatus) {
+    const targetApp = applications.find((a) => a.id === appId) || selectedWorkerModal
+    const targetShift = shifts.find((s) => s.id === shiftId) || targetApp?.shift
+
     const { error } = await supabase.from('shift_applications').update({ status: newStatus }).eq('id', appId)
     if (!error) {
       if (newStatus === 'accepted') {
-        const targetShift = shifts.find((s) => s.id === shiftId)
+        // 1. Notifica o trabalhador na hora que a candidatura foi aceita
+        if (targetApp?.worker_id) {
+          const compName = profile?.full_name || fullName || 'A empresa'
+          await supabase.functions.invoke('notify-nearby-workers', {
+            body: {
+              direct_user_id: targetApp.worker_id,
+              title: 'Candidatura Aceita! ✓',
+              body: `${compName} aceitou sua candidatura para "${targetShift?.title || 'a oportunidade'}". Entre no app para falar no WhatsApp!`
+            }
+          }).catch(() => {})
+        }
+
+        // 2. Verifica se atingiu o total de vagas e tira a campanha do painel público
         const totalVacancies = Number(targetShift?.vacancies || 1)
         const { count: acceptedCount } = await supabase
           .from('shift_applications')
@@ -1001,8 +1023,10 @@ export default function App() {
         }
       }
       setSelectedWorkerModal(null)
-      fetchApplications(profile)
-      fetchShifts(cityFilter, dayFilter)
+      await Promise.all([
+        fetchApplications(profile),
+        fetchShifts(cityFilter, dayFilter)
+      ])
     }
   }
 
@@ -1052,7 +1076,8 @@ export default function App() {
   }
 
   const renderPushPromptModal = () => {
-    if (!showPushPromptModal || pushEnabled || activeRole !== 'worker') return null
+    if (!showPushPromptModal || pushEnabled) return null
+    const isCompany = activeRole === 'company'
     return (
       <div
         className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -1065,10 +1090,12 @@ export default function App() {
           <div className="flex justify-between items-start gap-2">
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2.5 py-0.5 rounded-full">
-                Aviso de Oportunidades
+                Aviso em Tempo Real
               </span>
               <h3 className="font-extrabold text-white text-lg mt-2">
-                Receber alertas de turnos no raio de 20 km?
+                {isCompany
+                  ? 'Receber alertas quando alguém se candidatar?'
+                  : 'Receber alertas de turnos no raio de 20 km?'}
               </h3>
             </div>
             <button
@@ -1081,7 +1108,9 @@ export default function App() {
           </div>
 
           <p className="text-xs text-neutral-300 leading-relaxed">
-            Ative as notificações gratuitas agora para ser avisado no celular assim que uma empresa publicar um turno ou vaga perto de você.
+            {isCompany
+              ? 'Ative as notificações gratuitas para ser avisado no celular assim que um trabalhador se candidatar aos seus turnos ou vagas.'
+              : 'Ative as notificações gratuitas agora para ser avisado no celular assim que surgir uma vaga perto de você ou quando sua candidatura for aceita.'}
           </p>
 
           <div className="flex gap-2 pt-1">
@@ -1675,9 +1704,12 @@ export default function App() {
   const myCompletedCount = applications.filter((a) => a.status === 'accepted' && (a.company_confirmed_end || a.worker_confirmed_end)).length
 
   const isJobsTab = activeTab === 'jobs'
+  // Oculta automaticamente da vitrine os turnos/vagas que já preencheram todas as vagas (status === 'filled')
   const filteredListings = shifts.filter((item) => {
     const itemType = item.post_type || 'shift'
-    return isJobsTab ? itemType === 'job' : itemType !== 'job'
+    const matchesTab = isJobsTab ? itemType === 'job' : itemType !== 'job'
+    const isOpen = (item.status || 'open') === 'open'
+    return matchesTab && isOpen
   })
 
   return (
@@ -1742,11 +1774,19 @@ export default function App() {
           <p className="text-sm text-neutral-400 text-center py-10">A carregar dados...</p>
         ) : (
           <>
-            {activeRole === 'worker' && !pushEnabled && (
+            {!pushEnabled && (
               <div className="bg-[#111111] border border-lime-400/40 rounded-2xl p-3.5 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-extrabold text-white">Alertas de turnos no raio de 20 km</p>
-                  <p className="text-[11px] text-neutral-400">Ative para ser avisado assim que surgir vaga perto de você.</p>
+                  <p className="text-xs font-extrabold text-white">
+                    {activeRole === 'company'
+                      ? 'Alertas de novos candidatos'
+                      : 'Alertas de turnos no raio de 20 km'}
+                  </p>
+                  <p className="text-[11px] text-neutral-400">
+                    {activeRole === 'company'
+                      ? 'Ative para ser avisado quando alguém se candidatar.'
+                      : 'Ative para ser avisado assim que surgir vaga perto de você.'}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -2106,7 +2146,7 @@ export default function App() {
                                   </p>
                                 ) : (
                                   <p className="text-xs text-neutral-500">
-                                    Data: {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''}
+                                    Data: {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''} • {shift.vacancies || 1} {Number(shift.vacancies || 1) === 1 ? 'vaga' : 'vagas'}
                                   </p>
                                 )}
                               </div>
@@ -2114,11 +2154,7 @@ export default function App() {
 
                             <div className="pt-1 space-y-2" onClick={(e) => e.stopPropagation()}>
                               {activeRole === 'worker' ? (
-                                shift.status !== 'open' ? (
-                                  <div className="w-full text-center text-xs font-bold bg-neutral-200 text-neutral-600 py-3 rounded-2xl">
-                                    Vaga Preenchida
-                                  </div>
-                                ) : applied ? (
+                                applied ? (
                                   <div className="w-full text-center text-xs font-extrabold bg-black text-lime-400 py-3 rounded-2xl">
                                     Candidatura Enviada ✓
                                   </div>
@@ -2149,7 +2185,7 @@ export default function App() {
                                 </div>
                               ) : (
                                 <div className="w-full text-center text-xs font-bold bg-black text-white py-2.5 rounded-2xl">
-                                  Status: {shift.status === 'open' ? 'Aberto' : 'Preenchido'}
+                                  Status: Aberto
                                 </div>
                               )}
                             </div>
@@ -2318,17 +2354,24 @@ export default function App() {
                   </button>
                 </section>
 
-                {activeRole === 'worker' && (
+                {/* Só exibe o bloco de ativar notificações se ainda NÃO estiver ativo */}
+                {!pushEnabled && (
                   <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <h2 className="text-base font-bold text-white">Alertas de Vagas e Turnos (Raio de 20 km)</h2>
+                        <h2 className="text-base font-bold text-white">
+                          {activeRole === 'company'
+                            ? 'Alertas de Candidatos'
+                            : 'Alertas de Vagas e Turnos (Raio de 20 km)'}
+                        </h2>
                         <p className="text-xs text-neutral-400">
-                          Receba notificações gratuitas no aparelho quando novas oportunidades surgirem perto de você.
+                          {activeRole === 'company'
+                            ? 'Receba notificações gratuitas no celular quando um trabalhador se candidatar.'
+                            : 'Receba notificações gratuitas no aparelho quando novas oportunidades surgirem perto de você.'}
                         </p>
                       </div>
                       <span className="text-[10px] font-extrabold bg-lime-400/15 text-lime-400 border border-lime-400/30 px-2.5 py-1 rounded-full shrink-0">
-                        {pushEnabled ? 'Ativo' : 'Grátis'}
+                        Grátis
                       </span>
                     </div>
 
@@ -2338,16 +2381,8 @@ export default function App() {
                       disabled={pushLoading}
                       className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]"
                     >
-                      {pushLoading
-                        ? 'Ativando notificações...'
-                        : pushEnabled
-                          ? '🔔 Testar / Reativar Notificação no Celular'
-                          : '🔔 Ativar Notificações (20 km)'}
+                      {pushLoading ? 'Ativando notificações...' : '🔔 Ativar Notificações'}
                     </button>
-
-                    {pushStatus && (
-                      <p className="text-xs font-semibold text-lime-400">{pushStatus}</p>
-                    )}
                   </section>
                 )}
 
