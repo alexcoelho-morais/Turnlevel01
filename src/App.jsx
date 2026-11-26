@@ -197,6 +197,7 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [activeTab, setActiveTab] = useState('shifts')
+  const [buyingPass, setBuyingPass] = useState(false)
 
   const [pushLoading, setPushLoading] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
@@ -281,6 +282,11 @@ export default function App() {
   )
   const activeRole = profile?.role || role
 
+  const hasActivePass = Boolean(
+    isMasterTester ||
+      (profile?.passe_expira_em && new Date(profile.passe_expira_em) > new Date())
+  )
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -300,6 +306,22 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Atualiza o perfil automaticamente ao retornar do checkout do Mercado Pago
+  useEffect(() => {
+    if (!session?.user?.id) return
+    const handleReturnFocus = () => {
+      if (document.visibilityState === 'visible') {
+        loadUserData(session.user.id)
+      }
+    }
+    window.addEventListener('focus', handleReturnFocus)
+    document.addEventListener('visibilitychange', handleReturnFocus)
+    return () => {
+      window.removeEventListener('focus', handleReturnFocus)
+      document.removeEventListener('visibilitychange', handleReturnFocus)
+    }
+  }, [session?.user?.id])
+
   useEffect(() => {
     if (session && 'serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.ready
@@ -317,6 +339,35 @@ export default function App() {
         .catch(() => {})
     }
   }, [session])
+
+  async function handleBuyPass7Days() {
+    if (!session?.user?.id || buyingPass) return
+    setBuyingPass(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('passe-mercado-pago', {
+        body: {
+          return_url: window.location.href
+        }
+      })
+
+      if (error) {
+        alert('Erro ao iniciar pagamento: ' + (error.message || 'Tente novamente.'))
+        setBuyingPass(false)
+        return
+      }
+
+      if (data?.checkout_url) {
+        window.location.href = data.checkout_url
+      } else {
+        alert('Não foi possível obter o link de pagamento de R$ 9,47.')
+        setBuyingPass(false)
+      }
+    } catch (err) {
+      console.error('Erro ao comprar passe de 7 dias:', err)
+      alert('Erro inesperado ao iniciar o pagamento.')
+      setBuyingPass(false)
+    }
+  }
 
   async function handleSwitchMasterRole(nextRole, currentProf = profile) {
     setRole(nextRole)
@@ -962,6 +1013,10 @@ export default function App() {
 
   async function handleApply(shiftId) {
     if (!session) return
+    if (!hasActivePass) {
+      alert('Ative seu Passe de 7 dias por R$ 9,47 para enviar candidaturas.')
+      return
+    }
     const targetShift = shifts.find((s) => s.id === shiftId) || selectedShiftModal
 
     const { error } = await supabase.from('shift_applications').insert([
@@ -972,7 +1027,6 @@ export default function App() {
       if (error.code === '23505') alert('Você já se candidatou.')
       else alert('Erro: ' + error.message)
     } else {
-      // Notifica a empresa na hora que alguém se candidatou
       if (targetShift?.company_id) {
         const workerName = profile?.full_name || fullName || 'Um trabalhador'
         const isJob = (targetShift.post_type || 'shift') === 'job'
@@ -998,7 +1052,6 @@ export default function App() {
     const { error } = await supabase.from('shift_applications').update({ status: newStatus }).eq('id', appId)
     if (!error) {
       if (newStatus === 'accepted') {
-        // 1. Notifica o trabalhador na hora que a candidatura foi aceita
         if (targetApp?.worker_id) {
           const compName = profile?.full_name || fullName || 'A empresa'
           await supabase.functions.invoke('notify-nearby-workers', {
@@ -1010,7 +1063,6 @@ export default function App() {
           }).catch(() => {})
         }
 
-        // 2. Verifica se atingiu o total de vagas e tira a campanha do painel público
         const totalVacancies = Number(targetShift?.vacancies || 1)
         const { count: acceptedCount } = await supabase
           .from('shift_applications')
@@ -1073,6 +1125,51 @@ export default function App() {
       setReviewModalApp(null)
       fetchAllReviews()
     }
+  }
+
+  const renderPassCard = () => {
+    if (activeRole !== 'worker') return null
+
+    if (hasActivePass) {
+      const validLabel = profile?.passe_expira_em
+        ? `Válido até ${new Date(profile.passe_expira_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+        : 'Passe liberado'
+      return (
+        <div className="bg-[#111111] border border-lime-400/40 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+          <div>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2 py-0.5 rounded-full">
+              Passe 7 Dias Ativo
+            </span>
+            <p className="text-xs font-bold text-white mt-1.5">Candidaturas liberadas</p>
+            <p className="text-[11px] text-lime-400">{validLabel}</p>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="bg-[#111111] border border-lime-400/50 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-1">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2.5 py-0.5 rounded-full">
+            Passe de 7 Dias • R$ 9,47
+          </span>
+          <p className="text-xs font-extrabold text-white pt-0.5">
+            Ative seu passe para candidatar-se a turnos e vagas
+          </p>
+          <p className="text-[11px] text-neutral-400">
+            Cadastro e perfil continuam gratuitos. O passe vale por 7 dias após aprovação.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={buyingPass}
+          onClick={handleBuyPass7Days}
+          className="bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs px-4 py-3 rounded-xl transition shrink-0 shadow-[0_0_20px_rgba(163,230,53,0.25)]"
+        >
+          {buyingPass ? 'Abrindo Mercado Pago...' : 'Ativar Passe 7 Dias — R$ 9,47'}
+        </button>
+      </div>
+    )
   }
 
   const renderPushPromptModal = () => {
@@ -1704,7 +1801,6 @@ export default function App() {
   const myCompletedCount = applications.filter((a) => a.status === 'accepted' && (a.company_confirmed_end || a.worker_confirmed_end)).length
 
   const isJobsTab = activeTab === 'jobs'
-  // Oculta automaticamente da vitrine os turnos/vagas que já preencheram todas as vagas (status === 'filled')
   const filteredListings = shifts.filter((item) => {
     const itemType = item.post_type || 'shift'
     const matchesTab = isJobsTab ? itemType === 'job' : itemType !== 'job'
@@ -1801,6 +1897,8 @@ export default function App() {
 
             {(activeTab === 'shifts' || activeTab === 'jobs') && (
               <div className="space-y-6">
+                {renderPassCard()}
+
                 {activeRole === 'company' && (
                   <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2158,12 +2256,21 @@ export default function App() {
                                   <div className="w-full text-center text-xs font-extrabold bg-black text-lime-400 py-3 rounded-2xl">
                                     Candidatura Enviada ✓
                                   </div>
-                                ) : (
+                                ) : hasActivePass ? (
                                   <button
                                     onClick={() => setSelectedShiftModal(shift)}
                                     className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-sm"
                                   >
                                     {itemIsJob ? 'Ver Vaga e Candidatar' : 'Ver Detalhes e Candidatar'}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={buyingPass}
+                                    onClick={handleBuyPass7Days}
+                                    className="w-full bg-black hover:bg-neutral-800 text-lime-400 font-extrabold text-xs py-3.5 rounded-2xl transition shadow-sm"
+                                  >
+                                    {buyingPass ? 'Abrindo Mercado Pago...' : 'Ativar Passe 7 Dias — R$ 9,47'}
                                   </button>
                                 )
                               ) : shift.company_id === session.user.id ? (
@@ -2340,6 +2447,8 @@ export default function App() {
 
             {activeTab === 'profile' && (
               <div className="space-y-6">
+                {renderPassCard()}
+
                 <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-sm font-bold text-white">Atalho na Tela Inicial</h2>
@@ -2354,7 +2463,6 @@ export default function App() {
                   </button>
                 </section>
 
-                {/* Só exibe o bloco de ativar notificações se ainda NÃO estiver ativo */}
                 {!pushEnabled && (
                   <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -2661,9 +2769,18 @@ export default function App() {
                     <div className="w-full text-center py-3.5 rounded-2xl bg-black text-lime-400 text-xs font-extrabold">
                       Você já se candidatou ✓
                     </div>
-                  ) : (
+                  ) : hasActivePass ? (
                     <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-md">
                       {modalIsJob ? 'Candidatar-se à Vaga' : 'Confirmar Candidatura'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={buyingPass}
+                      onClick={handleBuyPass7Days}
+                      className="w-full bg-black hover:bg-neutral-800 text-lime-400 font-extrabold text-xs py-3.5 rounded-2xl transition shadow-md"
+                    >
+                      {buyingPass ? 'Abrindo Mercado Pago...' : 'Ativar Passe 7 Dias — R$ 9,47'}
                     </button>
                   )}
                 </div>
