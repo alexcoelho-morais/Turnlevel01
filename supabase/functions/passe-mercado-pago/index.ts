@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Libera requisições preflight do navegador (CORS)
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -25,31 +24,35 @@ serve(async (req) => {
     const url = new URL(req.url);
 
     // =========================================================================
-    // ROTA 1: WEBHOOK DO MERCADO PAGO (Avisa quando o pagamento foi aprovado)
+    // ROTA 1: WEBHOOK DO MERCADO PAGO
     // =========================================================================
     if (url.searchParams.get("origem") === "webhook") {
       const body = await req.json().catch(() => ({}));
       const orderId = body?.data?.id || url.searchParams.get("data.id") || url.searchParams.get("id");
 
       if (!orderId) {
-        return new Response(JSON.stringify({ recebido: true }), { status: 200 });
+        return new Response(JSON.stringify({ recebido: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
-      // Consulta a Order direto na API do Mercado Pago para confirmar que é verdadeira
       const mpCheck = await fetch(`https://api.mercadopago.com/v1/orders/${orderId}`, {
         headers: { Authorization: `Bearer ${mpToken}` },
       });
 
       if (!mpCheck.ok) {
-        return new Response(JSON.stringify({ erro: "Order não encontrada" }), { status: 200 });
+        return new Response(JSON.stringify({ erro: "Order não encontrada" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       const orderData = await mpCheck.json();
-      const status = orderData.status; // Ex: "processed" quando pago
+      const status = orderData.status;
       const userId = orderData.external_reference;
 
       if ((status === "processed" || status === "approved") && userId) {
-        // Verifica se já não processamos esse pagamento antes
         const { data: jaPago } = await supabaseAdmin
           .from("pagamentos_passe")
           .select("id, status")
@@ -57,16 +60,13 @@ serve(async (req) => {
           .maybeSingle();
 
         if (jaPago?.status !== "aprovado") {
-          // Calcula 7 dias a partir de agora
           const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-          // Atualiza o passe do trabalhador na tabela profiles
           await supabaseAdmin
             .from("profiles")
             .update({ passe_expira_em: expiraEm })
             .eq("id", userId);
 
-          // Marca o pagamento como aprovado em pagamentos_passe
           await supabaseAdmin
             .from("pagamentos_passe")
             .upsert(
@@ -81,11 +81,14 @@ serve(async (req) => {
         }
       }
 
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // =========================================================================
-    // ROTA 2: APP DO TRABALHADOR PEDINDO PARA GERAR O PAGAMENTO DE R$ 9,47
+    // ROTA 2: GERAR PAGAMENTO DE R$ 9,47 (PASSE 7 DIAS)
     // =========================================================================
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -113,7 +116,6 @@ serve(async (req) => {
     const webhookUrl = `${supabaseUrl}/functions/v1/passe-mercado-pago?origem=webhook`;
     const idempotencyKey = `${user.id}-${Date.now()}`;
 
-    // Cria a Order de Checkout Pro na API de Orders do Mercado Pago
     const mpResponse = await fetch("https://api.mercadopago.com/v1/orders", {
       method: "POST",
       headers: {
@@ -124,10 +126,13 @@ serve(async (req) => {
       body: JSON.stringify({
         type: "online",
         processing_mode: "automatic",
-        total_amount: "9.47",
+        total_amount: 9.47,
         external_reference: user.id,
         notification_url: webhookUrl,
         description: "Passe 7 dias de candidaturas ilimitadas - TurnLevel",
+        payer: {
+          email: user.email || "cliente@turnlevel.app",
+        },
         config: {
           online: {
             callback_url: return_url || "https://turnlevel.vercel.app",
@@ -136,7 +141,7 @@ serve(async (req) => {
         transactions: {
           payments: [
             {
-              amount: "9.47",
+              amount: 9.47,
             },
           ],
         },
@@ -152,7 +157,6 @@ serve(async (req) => {
       );
     }
 
-    // Registra a intenção pendente na tabela pagamentos_passe
     await supabaseAdmin.from("pagamentos_passe").insert({
       user_id: user.id,
       mp_order_id: String(mpResult.id),
@@ -160,7 +164,6 @@ serve(async (req) => {
       status: "pendente",
     });
 
-    // Retorna o link do Checkout Pro para o front-end abrir
     const checkoutUrl =
       mpResult?.type_response?.redirect_url ||
       mpResult?.init_point ||
