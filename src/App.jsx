@@ -78,6 +78,14 @@ function formatCurrencyBRL(value) {
   })
 }
 
+function formatCpfMask(rawValue) {
+  const digits = (rawValue || '').replace(/\D/g, '').slice(0, 11)
+  if (digits.length <= 3) return digits
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`
+}
+
 function maskDocument(doc, type = 'cpf') {
   const digits = (doc || '').replace(/\D/g, '')
   if (!digits) return 'Verificado'
@@ -227,10 +235,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('shifts')
   const [buyingPass, setBuyingPass] = useState(false)
 
-  // Estados do modal escuro do Checkout Transparente (Payment Brick)
+  // Estados do modal de pagamento (Pix direto na tela + aba Cartão)
   const [showPassModal, setShowPassModal] = useState(false)
+  const [checkoutTab, setCheckoutTab] = useState('pix')
+  const [pixCpfInput, setPixCpfInput] = useState('')
   const [brickLoading, setBrickLoading] = useState(false)
-  const [brickError, setBrickError] = useState('')
+  const [checkoutError, setCheckoutError] = useState('')
+  const [checkoutInfo, setCheckoutInfo] = useState('')
   const [paymentFeedback, setPaymentFeedback] = useState(null)
   const [copiedPix, setCopiedPix] = useState(false)
   const brickControllerRef = useRef(null)
@@ -382,20 +393,21 @@ export default function App() {
     }
   }, [session])
 
+  // Monta o Payment Brick APENAS quando o usuário abre a aba Cartão
   useEffect(() => {
-    if (!showPassModal || paymentFeedback) return
+    if (!showPassModal || checkoutTab !== 'card' || paymentFeedback) return
 
     let cancelled = false
 
-    async function mountPaymentBrick() {
+    async function mountCardBrick() {
       setBrickLoading(true)
-      setBrickError('')
+      setCheckoutError('')
 
       try {
         const MercadoPagoClass = await loadMercadoPagoSdk()
         if (cancelled) return
 
-        const container = document.getElementById('turnlevel-mp-brick-container')
+        const container = document.getElementById('turnlevel-mp-card-brick')
         if (!container) return
         container.innerHTML = ''
 
@@ -403,7 +415,7 @@ export default function App() {
           try {
             await brickControllerRef.current.unmount()
           } catch (err) {
-            console.error('Erro ao desmontar brick anterior:', err)
+            console.error(err)
           }
           brickControllerRef.current = null
         }
@@ -416,7 +428,7 @@ export default function App() {
           profileRef.current?.email ||
           'cliente@turnlevel.app'
 
-        const controller = await bricksBuilder.create('payment', 'turnlevel-mp-brick-container', {
+        const controller = await bricksBuilder.create('payment', 'turnlevel-mp-card-brick', {
           initialization: {
             amount: PASS_AMOUNT,
             payer: {
@@ -442,7 +454,6 @@ export default function App() {
               hideFormTitle: true
             },
             paymentMethods: {
-              bankTransfer: 'all',
               creditCard: 'all',
               maxInstallments: 1
             }
@@ -452,13 +463,13 @@ export default function App() {
               if (!cancelled) setBrickLoading(false)
             },
             onSubmit: async ({ formData }) => {
-              setBrickError('')
+              setCheckoutError('')
               setBuyingPass(true)
 
               try {
                 const { data, error } = await supabase.functions.invoke('passe-mercado-pago', {
                   body: {
-                    payment_method_id: formData?.payment_method_id || 'pix',
+                    payment_method_id: formData?.payment_method_id,
                     token: formData?.token,
                     installments: formData?.installments || 1,
                     issuer_id: formData?.issuer_id,
@@ -468,13 +479,17 @@ export default function App() {
 
                 setBuyingPass(false)
 
-                if (error || data?.erro) {
-                  const msg = data?.erro || error?.message || 'Não foi possível processar o pagamento.'
-                  setBrickError(msg)
-                  throw new Error(msg)
+                if (error) {
+                  setCheckoutError(error.message || 'Erro de comunicação ao processar cartão.')
+                  return
                 }
 
-                if (data?.status === 'approved') {
+                if (!data?.ok) {
+                  setCheckoutError(data?.erro || 'Pagamento no cartão não autorizado.')
+                  return
+                }
+
+                if (data.status === 'approved') {
                   if (sessionRef.current?.user?.id) {
                     await loadUserData(sessionRef.current.user.id)
                   }
@@ -483,27 +498,18 @@ export default function App() {
                     status: data.status,
                     paymentId: data.payment_id
                   })
-                  return
+                } else {
+                  setCheckoutError(`Status do pagamento: ${data.status}. Tente novamente ou use o Pix.`)
                 }
-
-                setPaymentFeedback({
-                  type: 'pix',
-                  status: data?.status || 'pending',
-                  paymentId: data?.payment_id,
-                  qrCode: data?.qr_code || '',
-                  qrCodeBase64: data?.qr_code_base64 || '',
-                  ticketUrl: data?.ticket_url || ''
-                })
               } catch (err) {
                 setBuyingPass(false)
-                setBrickError(err?.message || 'Erro ao confirmar pagamento.')
-                throw err
+                setCheckoutError(err?.message || 'Erro inesperado ao processar cartão.')
               }
             },
             onError: (err) => {
               if (!cancelled) {
                 setBrickLoading(false)
-                setBrickError(err?.message || 'Erro no formulário de pagamento do Mercado Pago.')
+                setCheckoutError(err?.message || 'Erro ao carregar formulário do cartão.')
               }
             }
           }
@@ -517,12 +523,12 @@ export default function App() {
       } catch (err) {
         if (!cancelled) {
           setBrickLoading(false)
-          setBrickError(err?.message || 'Erro ao iniciar o checkout.')
+          setCheckoutError(err?.message || 'Erro ao iniciar checkout do cartão.')
         }
       }
     }
 
-    mountPaymentBrick()
+    mountCardBrick()
 
     return () => {
       cancelled = true
@@ -531,22 +537,114 @@ export default function App() {
         brickControllerRef.current = null
       }
     }
-  }, [showPassModal, paymentFeedback])
+  }, [showPassModal, checkoutTab, paymentFeedback])
 
   function handleOpenPassModal() {
     if (!session?.user?.id) return
-    setBrickError('')
+    // Fecha qualquer outro modal aberto antes de abrir o pagamento para evitar tela preta
+    setSelectedShiftModal(null)
+    setSelectedWorkerModal(null)
+    setShowPushPromptModal(false)
+    setShowInstallGuide(false)
+    setLegalModal(null)
+
+    setCheckoutError('')
+    setCheckoutInfo('')
     setPaymentFeedback(null)
     setCopiedPix(false)
+    setCheckoutTab('pix')
+    const savedCpf = profile?.cpf || cpf || ''
+    setPixCpfInput(formatCpfMask(savedCpf))
     setShowPassModal(true)
   }
 
   function handleClosePassModal() {
     setShowPassModal(false)
-    setBrickError('')
+    setCheckoutError('')
+    setCheckoutInfo('')
     setPaymentFeedback(null)
     setCopiedPix(false)
     setBuyingPass(false)
+  }
+
+  async function handleGeneratePixPayment(e) {
+    if (e) e.preventDefault()
+    if (!session?.user?.id) return
+
+    const cleanCpf = (pixCpfInput || '').replace(/\D/g, '')
+    if (cleanCpf.length !== 11) {
+      setCheckoutError('Digite os 11 números do seu CPF para gerar o QR Code Pix.')
+      return
+    }
+
+    setBuyingPass(true)
+    setCheckoutError('')
+    setCheckoutInfo('')
+
+    try {
+      // Salva o CPF no perfil se ainda não estava salvo
+      if (!profile?.cpf && cleanCpf.length === 11) {
+        await supabase
+          .from('profiles')
+          .update({ cpf: formatCpfMask(cleanCpf) })
+          .eq('id', session.user.id)
+      }
+
+      const payerEmail = session.user.email || 'cliente@turnlevel.app'
+      const { data, error } = await supabase.functions.invoke('passe-mercado-pago', {
+        body: {
+          payment_method_id: 'pix',
+          cpf: cleanCpf,
+          payer: {
+            email: payerEmail,
+            first_name: profile?.full_name || fullName || 'Cliente',
+            identification: {
+              type: 'CPF',
+              number: cleanCpf
+            }
+          }
+        }
+      })
+
+      setBuyingPass(false)
+
+      if (error) {
+        setCheckoutError(error.message || 'Erro ao conectar com o servidor de pagamento.')
+        return
+      }
+
+      if (!data?.ok) {
+        setCheckoutError(data?.erro || 'Não foi possível gerar o QR Code Pix.')
+        return
+      }
+
+      if (data.status === 'approved') {
+        await loadUserData(session.user.id)
+        setPaymentFeedback({
+          type: 'approved',
+          status: data.status,
+          paymentId: data.payment_id
+        })
+        return
+      }
+
+      if (!data.qr_code && !data.qr_code_base64) {
+        setCheckoutError('O Mercado Pago não retornou o QR Code Pix. Verifique a chave Pix cadastrada na conta Mercado Pago.')
+        return
+      }
+
+      setPaymentFeedback({
+        type: 'pix',
+        status: data.status || 'pending',
+        paymentId: data.payment_id,
+        qrCode: data.qr_code || '',
+        qrCodeBase64: data.qr_code_base64 || '',
+        ticketUrl: data.ticket_url || ''
+      })
+    } catch (err) {
+      setBuyingPass(false)
+      setCheckoutError(err?.message || 'Erro inesperado ao gerar Pix.')
+    }
   }
 
   async function handleCopyPixCode(code) {
@@ -554,22 +652,55 @@ export default function App() {
     try {
       await navigator.clipboard.writeText(code)
       setCopiedPix(true)
-      setTimeout(() => setCopiedPix(false), 2500)
+      setTimeout(() => setCopiedPix(false), 3000)
     } catch (err) {
       console.error('Erro ao copiar código Pix:', err)
-      alert('Código Pix: ' + code)
+      setCheckoutInfo('Selecione e copie o código Pix exibido na caixa acima.')
     }
   }
 
   async function handleCheckPassStatusAfterPix() {
     if (!session?.user?.id) return
     setBuyingPass(true)
-    await loadUserData(session.user.id)
-    setBuyingPass(false)
-    if (profileRef.current?.passe_expira_em && new Date(profileRef.current.passe_expira_em) > new Date()) {
-      handleClosePassModal()
-    } else {
-      alert('Pagamento ainda pendente. Assim que o banco confirmar o Pix, seu Passe de 7 Dias será liberado automaticamente.')
+    setCheckoutError('')
+    setCheckoutInfo('')
+
+    try {
+      if (paymentFeedback?.paymentId) {
+        const { data } = await supabase.functions.invoke('passe-mercado-pago', {
+          body: {
+            action: 'check_status',
+            payment_id: paymentFeedback.paymentId
+          }
+        })
+
+        if (data?.approved) {
+          await loadUserData(session.user.id)
+          setBuyingPass(false)
+          setPaymentFeedback({
+            type: 'approved',
+            status: 'approved',
+            paymentId: paymentFeedback.paymentId
+          })
+          return
+        }
+      }
+
+      await loadUserData(session.user.id)
+      setBuyingPass(false)
+
+      if (profileRef.current?.passe_expira_em && new Date(profileRef.current.passe_expira_em) > new Date()) {
+        setPaymentFeedback({
+          type: 'approved',
+          status: 'approved',
+          paymentId: paymentFeedback?.paymentId
+        })
+      } else {
+        setCheckoutInfo('Pagamento ainda aguardando confirmação do banco. Assim que pagar o Pix, toque novamente aqui.')
+      }
+    } catch (err) {
+      setBuyingPass(false)
+      setCheckoutError(err?.message || 'Erro ao verificar pagamento.')
     }
   }
 
@@ -1381,7 +1512,7 @@ export default function App() {
 
     return (
       <div
-        className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
         onClick={handleClosePassModal}
       >
         <div
@@ -1400,7 +1531,7 @@ export default function App() {
                 </span>
               </div>
               <p className="text-[11px] text-neutral-400 mt-1">
-                Pague com Cartão ou Pix sem sair do TurnLevel.
+                Liberação imediata para se candidatar durante 7 dias.
               </p>
             </div>
             <button
@@ -1434,21 +1565,21 @@ export default function App() {
             <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-4 space-y-3.5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400/15 text-lime-400 border border-lime-400/30 px-2.5 py-0.5 rounded-full">
-                  Pix Gerado
+                  Pix Pronto na Tela
                 </span>
                 <span className="text-xs font-black text-white">R$ {formatCurrencyBRL(PASS_AMOUNT)}</span>
               </div>
 
               <p className="text-xs text-neutral-300 leading-relaxed">
-                Escaneie o QR Code ou copie o código Pix abaixo para pagar no aplicativo do seu banco.
+                Escaneie o <strong className="text-white">QR Code</strong> abaixo ou copie o <strong className="text-lime-400">código Pix Copia e Cola</strong> para pagar no app do seu banco.
               </p>
 
               {paymentFeedback.qrCodeBase64 && (
-                <div className="flex justify-center bg-white p-3 rounded-2xl w-fit mx-auto">
+                <div className="flex justify-center bg-white p-3 rounded-2xl w-fit mx-auto shadow-md">
                   <img
                     src={`data:image/png;base64,${paymentFeedback.qrCodeBase64}`}
                     alt="QR Code Pix"
-                    className="w-40 h-40 object-contain"
+                    className="w-44 h-44 object-contain"
                   />
                 </div>
               )}
@@ -1456,56 +1587,140 @@ export default function App() {
               {paymentFeedback.qrCode && (
                 <div className="space-y-2">
                   <label className="block text-[11px] text-neutral-400 font-semibold">
-                    Código Pix (Copia e Cola)
+                    Link / Código Pix (Copia e Cola)
                   </label>
-                  <div className="bg-[#111111] border border-neutral-800 rounded-xl p-2.5 text-[11px] text-neutral-200 break-all font-mono">
-                    {paymentFeedback.qrCode}
-                  </div>
+                  <input
+                    type="text"
+                    readOnly
+                    value={paymentFeedback.qrCode}
+                    onFocus={(e) => e.target.select()}
+                    className="w-full bg-[#111111] border border-neutral-800 rounded-xl px-3 py-2.5 text-[11px] text-neutral-200 font-mono outline-none"
+                  />
                   <button
                     type="button"
                     onClick={() => handleCopyPixCode(paymentFeedback.qrCode)}
-                    className="w-full bg-neutral-900 hover:bg-neutral-800 border border-lime-400/40 text-lime-400 font-extrabold text-xs py-3 rounded-xl transition"
+                    className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3 rounded-xl transition"
                   >
                     {copiedPix ? '✓ Código Pix Copiado!' : 'Copiar Código Pix'}
                   </button>
                 </div>
               )}
 
+              {checkoutInfo && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs p-3 rounded-xl">
+                  {checkoutInfo}
+                </div>
+              )}
+
+              {checkoutError && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs p-3 rounded-xl">
+                  {checkoutError}
+                </div>
+              )}
+
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setPaymentFeedback(null)}
+                  onClick={() => {
+                    setPaymentFeedback(null)
+                    setCheckoutError('')
+                    setCheckoutInfo('')
+                  }}
                   className="w-1/3 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 font-bold text-xs py-3 rounded-xl transition"
                 >
-                  Trocar método
+                  Voltar
                 </button>
                 <button
                   type="button"
                   disabled={buyingPass}
                   onClick={handleCheckPassStatusAfterPix}
-                  className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3 rounded-xl transition"
+                  className="w-2/3 bg-neutral-900 hover:bg-neutral-800 border border-lime-400/50 text-lime-400 font-extrabold text-xs py-3 rounded-xl transition"
                 >
                   {buyingPass ? 'Verificando...' : 'Já paguei, verificar passe'}
                 </button>
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
-              {brickLoading && (
-                <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-6 text-center space-y-2">
-                  <p className="text-xs font-bold text-lime-400">Carregando opções de pagamento...</p>
-                  <p className="text-[11px] text-neutral-400">Preparando checkout seguro do TurnLevel.</p>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 bg-[#050505] p-1 rounded-2xl border border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckoutTab('pix')
+                    setCheckoutError('')
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-extrabold transition ${
+                    checkoutTab === 'pix'
+                      ? 'bg-lime-400 text-black'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Pix (Na Tela)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckoutTab('card')
+                    setCheckoutError('')
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-extrabold transition ${
+                    checkoutTab === 'card'
+                      ? 'bg-lime-400 text-black'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Cartão de Crédito
+                </button>
+              </div>
+
+              {checkoutTab === 'pix' ? (
+                <form onSubmit={handleGeneratePixPayment} className="bg-[#050505] border border-neutral-800 rounded-2xl p-4 space-y-3.5">
+                  <div className="space-y-1">
+                    <p className="text-xs font-extrabold text-white">Gerar QR Code Pix instantâneo</p>
+                    <p className="text-[11px] text-neutral-400 leading-relaxed">
+                      O QR Code e o link Copia e Cola aparecem aqui na tela na hora, sem precisar abrir e-mail.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-neutral-400 mb-1">CPF do Pagador (exigido pelo Banco Central)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      placeholder="000.000.000-00"
+                      value={pixCpfInput}
+                      onChange={(e) => {
+                        setPixCpfInput(formatCpfMask(e.target.value))
+                        setCheckoutError('')
+                      }}
+                      className="w-full bg-[#111111] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3.5 py-3 text-sm text-white"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={buyingPass}
+                    className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.25)]"
+                  >
+                    {buyingPass ? 'Gerando QR Code Pix...' : 'Gerar QR Code Pix — R$ 9,47'}
+                  </button>
+                </form>
+              ) : (
+                <div className="space-y-3">
+                  {brickLoading && (
+                    <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-6 text-center space-y-2">
+                      <p className="text-xs font-bold text-lime-400">Carregando formulário do cartão...</p>
+                      <p className="text-[11px] text-neutral-400">Ambiente seguro Mercado Pago.</p>
+                    </div>
+                  )}
+                  <div id="turnlevel-mp-card-brick" />
                 </div>
               )}
 
-              <div
-                id="turnlevel-mp-brick-container"
-                className={brickLoading ? 'opacity-30 pointer-events-none' : 'opacity-100 transition-opacity'}
-              />
-
-              {brickError && (
+              {checkoutError && (
                 <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs p-3 rounded-xl">
-                  {brickError}
+                  {checkoutError}
                 </div>
               )}
             </div>
@@ -1516,11 +1731,11 @@ export default function App() {
   }
 
   const renderPushPromptModal = () => {
-    if (!showPushPromptModal || pushEnabled) return null
+    if (!showPushPromptModal || pushEnabled || showPassModal) return null
     const isCompany = activeRole === 'company'
     return (
       <div
-        className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
         onClick={() => setShowPushPromptModal(false)}
       >
         <div
@@ -1582,10 +1797,10 @@ export default function App() {
   }
 
   const renderInstallGuideModal = () => {
-    if (!showInstallGuide) return null
+    if (!showInstallGuide || showPassModal) return null
     return (
       <div
-        className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
         onClick={() => setShowInstallGuide(false)}
       >
         <div
@@ -1663,11 +1878,11 @@ export default function App() {
   )
 
   const renderLegalModal = () => {
-    if (!legalModal) return null
+    if (!legalModal || showPassModal) return null
     const isTerms = legalModal === 'terms'
     return (
       <div
-        className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
         onClick={() => setLegalModal(null)}
       >
         <div
@@ -2051,7 +2266,7 @@ export default function App() {
                       <div className="grid grid-cols-3 gap-2">
                         <div className="col-span-2">
                           <label className="block text-xs text-neutral-400 mb-1">CPF</label>
-                          <input type="text" inputMode="numeric" required placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          <input type="text" inputMode="numeric" required placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(formatCpfMask(e.target.value))} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                         </div>
                         <div>
                           <label className="block text-xs text-neutral-400 mb-1">Idade</label>
@@ -2928,7 +3143,7 @@ export default function App() {
                         <>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">CPF</label>
-                            <input type="text" inputMode="numeric" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                            <input type="text" inputMode="numeric" value={cpf} onChange={(e) => setCpf(formatCpfMask(e.target.value))} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
                           </div>
                           <div>
                             <label className="block text-xs text-neutral-400 mb-1">Idade</label>
@@ -2997,11 +3212,11 @@ export default function App() {
         )}
       </main>
 
-      {selectedShiftModal && (() => {
+      {selectedShiftModal && !showPassModal && (() => {
         const compRep = getReputationStats(selectedShiftModal.company?.id)
         const modalIsJob = (selectedShiftModal.post_type || 'shift') === 'job'
         return (
-          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
+          <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
             <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-start">
                 <div className="flex items-center gap-3">
@@ -3134,10 +3349,10 @@ export default function App() {
         )
       })()}
 
-      {selectedWorkerModal && selectedWorkerModal.worker && (() => {
+      {selectedWorkerModal && selectedWorkerModal.worker && !showPassModal && (() => {
         const wRep = getReputationStats(selectedWorkerModal.worker.id)
         return (
-          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
+          <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
             <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-start">
                 <div className="flex items-center gap-3">
@@ -3199,7 +3414,7 @@ export default function App() {
         const editIsJob = editingShift.post_type === 'job'
         return (
           <div
-            className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
             onClick={() => setEditingShift(null)}
           >
             <div
@@ -3460,7 +3675,7 @@ export default function App() {
       })()}
 
       {reviewModalApp && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setReviewModalApp(null)}>
+        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4" onClick={() => setReviewModalApp(null)}>
           <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center">
               <h3 className="font-extrabold text-black text-lg">Avaliar Experiência</h3>
