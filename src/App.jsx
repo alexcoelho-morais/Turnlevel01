@@ -5,8 +5,34 @@ const VAPID_PUBLIC_KEY =
   'BKVSS2H3oGVbJKXVePdGR8R6pB_oTDV-XkP14Q_OnTVh5UU01G_e_9RcFXnDBDQP1o-ev29WksUG5wOJSN2PMxQ'
 
 const MP_PUBLIC_KEY = 'APP_USR-74337540-492c-428d-8723-3d07a6935197'
+const PASS_AMOUNT = 9.47
 
 const TEST_MASTER_EMAILS = ['turnlevelteste@gmail.com']
+
+function loadMercadoPagoSdk() {
+  return new Promise((resolve, reject) => {
+    if (window.MercadoPago) {
+      resolve(window.MercadoPago)
+      return
+    }
+    const existingScript = document.querySelector('script[data-mp-sdk="true"]')
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(window.MercadoPago))
+      existingScript.addEventListener('error', () => reject(new Error('Falha ao carregar SDK do Mercado Pago.')))
+      return
+    }
+    const script = document.createElement('script')
+    script.src = 'https://sdk.mercadopago.com/js/v2'
+    script.async = true
+    script.dataset.mpSdk = 'true'
+    script.onload = () => {
+      if (window.MercadoPago) resolve(window.MercadoPago)
+      else reject(new Error('SDK do Mercado Pago indisponível.'))
+    }
+    script.onerror = () => reject(new Error('Não foi possível carregar o script do Mercado Pago.'))
+    document.body.appendChild(script)
+  })
+}
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -201,19 +227,15 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('shifts')
   const [buyingPass, setBuyingPass] = useState(false)
 
-  // Estados do Checkout Escuro Integrado (Pix + Cartão)
-  const [showCheckoutModal, setShowCheckoutModal] = useState(false)
-  const [checkoutMethod, setCheckoutMethod] = useState('pix') // 'pix' | 'card'
-  const [pixData, setPixData] = useState(null)
-  const [pixCopied, setPixCopied] = useState(false)
-  const [checkingPassStatus, setCheckingPassStatus] = useState(false)
-  const [checkoutError, setCheckoutError] = useState('')
-  const [cardHolderName, setCardHolderName] = useState('')
-  const [cardCpf, setCardCpf] = useState('')
-  const [cardNumber, setCardNumber] = useState('')
-  const [cardExpiry, setCardExpiry] = useState('')
-  const [cardCvv, setCardCvv] = useState('')
-  const mpInstanceRef = useRef(null)
+  // Estados do modal escuro do Checkout Transparente (Payment Brick)
+  const [showPassModal, setShowPassModal] = useState(false)
+  const [brickLoading, setBrickLoading] = useState(false)
+  const [brickError, setBrickError] = useState('')
+  const [paymentFeedback, setPaymentFeedback] = useState(null)
+  const [copiedPix, setCopiedPix] = useState(false)
+  const brickControllerRef = useRef(null)
+  const sessionRef = useRef(null)
+  const profileRef = useRef(null)
 
   const [pushLoading, setPushLoading] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
@@ -292,6 +314,9 @@ export default function App() {
   const [workSchedule, setWorkSchedule] = useState('Segunda a Sábado')
   const [salaryPeriod, setSalaryPeriod] = useState('/ mês')
 
+  sessionRef.current = session
+  profileRef.current = profile
+
   const isMasterTester = Boolean(
     session?.user?.email &&
       TEST_MASTER_EMAILS.map((e) => e.toLowerCase()).includes(session.user.email.toLowerCase())
@@ -322,6 +347,7 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Atualiza o perfil automaticamente ao retornar ao aplicativo
   useEffect(() => {
     if (!session?.user?.id) return
     const handleReturnFocus = () => {
@@ -355,186 +381,195 @@ export default function App() {
     }
   }, [session])
 
-  // Carrega o SDK JS do Mercado Pago para tokenização de cartão
+  // Inicializa o Payment Brick do Mercado Pago em tema escuro dentro do modal
   useEffect(() => {
-    if (!showCheckoutModal) return
-    if (window.MercadoPago) {
-      if (!mpInstanceRef.current) {
-        mpInstanceRef.current = new window.MercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' })
-      }
-      return
-    }
-    const existingScript = document.querySelector('script[src="https://sdk.mercadopago.com/js/v2"]')
-    if (existingScript) return
+    if (!showPassModal || paymentFeedback) return
 
-    const script = document.createElement('script')
-    script.src = 'https://sdk.mercadopago.com/js/v2'
-    script.async = true
-    script.onload = () => {
-      if (window.MercadoPago && !mpInstanceRef.current) {
-        mpInstanceRef.current = new window.MercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' })
-      }
-    }
-    document.body.appendChild(script)
-  }, [showCheckoutModal])
+    let cancelled = false
 
-  function handleOpenPassCheckout() {
-    if (!session?.user?.id) return
-    setCheckoutError('')
-    setPixData(null)
-    setPixCopied(false)
-    setCheckoutMethod('pix')
-    setCardHolderName(profile?.full_name || fullName || '')
-    setCardCpf(profile?.cpf || cpf || '')
-    setShowCheckoutModal(true)
-  }
+    async function mountPaymentBrick() {
+      setBrickLoading(true)
+      setBrickError('')
 
-  async function handleGeneratePixPass() {
-    if (!session?.user?.id || buyingPass) return
-    setBuyingPass(true)
-    setCheckoutError('')
-    setPixCopied(false)
-
-    try {
-      const { data, error } = await supabase.functions.invoke('passe-mercado-pago', {
-        body: {
-          payment_method_id: 'pix',
-          payer: {
-            email: session.user.email || 'cliente@turnlevel.app'
-          }
-        }
-      })
-
-      if (error) {
-        setCheckoutError(error.message || 'Não foi possível gerar o Pix agora.')
-        setBuyingPass(false)
-        return
-      }
-
-      if (data?.erro) {
-        setCheckoutError(typeof data.erro === 'string' ? data.erro : 'Falha ao gerar código Pix.')
-        setBuyingPass(false)
-        return
-      }
-
-      setPixData({
-        payment_id: data.payment_id,
-        qr_code: data.qr_code,
-        qr_code_base64: data.qr_code_base64,
-        ticket_url: data.ticket_url
-      })
-    } catch (err) {
-      console.error('Erro ao gerar Pix:', err)
-      setCheckoutError('Erro inesperado ao gerar código Pix.')
-    }
-
-    setBuyingPass(false)
-  }
-
-  async function handleCheckPassActivation() {
-    if (!session?.user?.id) return
-    setCheckingPassStatus(true)
-    await loadUserData(session.user.id)
-    setCheckingPassStatus(false)
-  }
-
-  async function handlePayWithCard(e) {
-    e.preventDefault()
-    if (!session?.user?.id || buyingPass) return
-    setBuyingPass(true)
-    setCheckoutError('')
-
-    try {
-      const cleanNumber = cardNumber.replace(/\D/g, '')
-      const cleanCpf = cardCpf.replace(/\D/g, '')
-      const expiryParts = cardExpiry.split('/')
-      const expMonth = (expiryParts[0] || '').replace(/\D/g, '').padStart(2, '0')
-      const rawYear = (expiryParts[1] || '').replace(/\D/g, '')
-      const expYear = rawYear.length === 2 ? `20${rawYear}` : rawYear
-      const cleanCvv = cardCvv.replace(/\D/g, '')
-
-      if (cleanNumber.length < 13 || expMonth.length !== 2 || expYear.length !== 4 || cleanCvv.length < 3) {
-        setCheckoutError('Preencha número do cartão, validade (MM/AA), CVV e nome do titular corretamente.')
-        setBuyingPass(false)
-        return
-      }
-
-      if (!window.MercadoPago) {
-        setCheckoutError('Carregando módulo seguro do cartão... tente novamente em 2 segundos.')
-        setBuyingPass(false)
-        return
-      }
-
-      const mp = mpInstanceRef.current || new window.MercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' })
-      mpInstanceRef.current = mp
-
-      const cardToken = await mp.createCardToken({
-        cardNumber: cleanNumber,
-        cardholderName: cardHolderName.trim() || fullName || 'Titular',
-        cardExpirationMonth: expMonth,
-        cardExpirationYear: expYear,
-        securityCode: cleanCvv,
-        identification: cleanCpf
-          ? {
-              type: 'CPF',
-              number: cleanCpf
-            }
-          : undefined
-      })
-
-      if (!cardToken?.id) {
-        setCheckoutError('Não foi possível validar os dados do cartão. Confira os números digitados.')
-        setBuyingPass(false)
-        return
-      }
-
-      const bin = cleanNumber.slice(0, 6)
-      let paymentMethodId = 'credit_card'
       try {
-        const pmInfo = await mp.getPaymentMethods({ bin })
-        const detected = pmInfo?.results?.[0]?.id
-        if (detected) paymentMethodId = detected
-      } catch {
-        // mantém fallback
-      }
+        const MercadoPagoClass = await loadMercadoPagoSdk()
+        if (cancelled) return
 
-      const { data, error } = await supabase.functions.invoke('passe-mercado-pago', {
-        body: {
-          payment_method_id: paymentMethodId,
-          token: cardToken.id,
-          installments: 1,
-          payer: {
-            email: session.user.email || 'cliente@turnlevel.app',
-            identification: cleanCpf
-              ? {
-                  type: 'CPF',
-                  number: cleanCpf
-                }
-              : undefined
-          }
+        const container = document.getElementById('turnlevel-mp-brick-container')
+        if (!container) return
+        container.innerHTML = ''
+
+        if (brickControllerRef.current?.unmount) {
+          try {
+            await brickControllerRef.current.unmount()
+          } catch (_) {}
+          brickControllerRef.current = null
         }
-      })
 
-      if (error || data?.erro) {
-        setCheckoutError(data?.erro || error?.message || 'Pagamento com cartão não autorizado.')
-        setBuyingPass(false)
-        return
-      }
+        const mp = new MercadoPagoClass(MP_PUBLIC_KEY, { locale: 'pt-BR' })
+        const bricksBuilder = mp.bricks()
 
-      if (data?.status === 'approved') {
-        await loadUserData(session.user.id)
-        setShowCheckoutModal(false)
-        alert('Passe de 7 dias ativado com sucesso! Candidaturas liberadas.')
-      } else {
-        setCheckoutError(`Status do pagamento: ${data?.status || 'em análise'}. Assim que aprovado, o passe será liberado.`)
-        await loadUserData(session.user.id)
+        const payerEmail =
+          sessionRef.current?.user?.email ||
+          profileRef.current?.email ||
+          'cliente@turnlevel.app'
+
+        const controller = await bricksBuilder.create('payment', 'turnlevel-mp-brick-container', {
+          initialization: {
+            amount: PASS_AMOUNT,
+            payer: {
+              email: payerEmail
+            }
+          },
+          customization: {
+            visual: {
+              style: {
+                theme: 'dark',
+                customVariables: {
+                  textPrimaryColor: '#ffffff',
+                  textSecondaryColor: '#a3a3a3',
+                  inputBackgroundColor: '#050505',
+                  formBackgroundColor: '#111111',
+                  baseColor: '#a3e635',
+                  outlinePrimaryColor: '#a3e635',
+                  outlineSecondaryColor: '#262626',
+                  borderRadiusMedium: '12px',
+                  borderRadiusLarge: '16px'
+                }
+              },
+              hideFormTitle: true
+            },
+            paymentMethods: {
+              bankTransfer: 'all',
+              creditCard: 'all',
+              maxInstallments: 1
+            }
+          },
+          callbacks: {
+            onReady: () => {
+              if (!cancelled) setBrickLoading(false)
+            },
+            onSubmit: async ({ formData }) => {
+              setBrickError('')
+              setBuyingPass(true)
+
+              try {
+                const { data, error } = await supabase.functions.invoke('passe-mercado-pago', {
+                  body: {
+                    payment_method_id: formData?.payment_method_id || 'pix',
+                    token: formData?.token,
+                    installments: formData?.installments || 1,
+                    issuer_id: formData?.issuer_id,
+                    payer: formData?.payer || { email: payerEmail }
+                  }
+                })
+
+                setBuyingPass(false)
+
+                if (error || data?.erro) {
+                  const msg = data?.erro || error?.message || 'Não foi possível processar o pagamento.'
+                  setBrickError(msg)
+                  throw new Error(msg)
+                }
+
+                if (data?.status === 'approved') {
+                  if (sessionRef.current?.user?.id) {
+                    await loadUserData(sessionRef.current.user.id)
+                  }
+                  setPaymentFeedback({
+                    type: 'approved',
+                    status: data.status,
+                    paymentId: data.payment_id
+                  })
+                  return
+                }
+
+                setPaymentFeedback({
+                  type: 'pix',
+                  status: data?.status || 'pending',
+                  paymentId: data?.payment_id,
+                  qrCode: data?.qr_code || '',
+                  qrCodeBase64: data?.qr_code_base64 || '',
+                  ticketUrl: data?.ticket_url || ''
+                })
+              } catch (err) {
+                setBuyingPass(false)
+                if (!brickError) {
+                  setBrickError(err?.message || 'Erro ao confirmar pagamento.')
+                }
+                throw err
+              }
+            },
+            onError: (err) => {
+              if (!cancelled) {
+                setBrickLoading(false)
+                setBrickError(err?.message || 'Erro no formulário de pagamento do Mercado Pago.')
+              }
+            }
+          }
+        })
+
+        if (!cancelled) {
+          brickControllerRef.current = controller
+        } else if (controller?.unmount) {
+          controller.unmount().catch(() => {})
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBrickLoading(false)
+          setBrickError(err?.message || 'Erro ao iniciar o checkout.')
+        }
       }
-    } catch (err) {
-      console.error('Erro pagamento cartão:', err)
-      setCheckoutError(err?.message || 'Erro ao processar pagamento com cartão.')
     }
 
+    mountPaymentBrick()
+
+    return () => {
+      cancelled = true
+      if (brickControllerRef.current?.unmount) {
+        brickControllerRef.current.unmount().catch(() => {})
+        brickControllerRef.current = null
+      }
+    }
+  }, [showPassModal, paymentFeedback])
+
+  function handleOpenPassModal() {
+    if (!session?.user?.id) return
+    setBrickError('')
+    setPaymentFeedback(null)
+    setCopiedPix(false)
+    setShowPassModal(true)
+  }
+
+  function handleClosePassModal() {
+    setShowPassModal(false)
+    setBrickError('')
+    setPaymentFeedback(null)
+    setCopiedPix(false)
     setBuyingPass(false)
+  }
+
+  async function handleCopyPixCode(code) {
+    if (!code) return
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopiedPix(true)
+      setTimeout(() => setCopiedPix(false), 2500)
+    } catch (_) {
+      alert('Código Pix: ' + code)
+    }
+  }
+
+  async function handleCheckPassStatusAfterPix() {
+    if (!session?.user?.id) return
+    setBuyingPass(true)
+    await loadUserData(session.user.id)
+    setBuyingPass(false)
+    if (profileRef.current?.passe_expira_em && new Date(profileRef.current.passe_expira_em) > new Date()) {
+      handleClosePassModal()
+    } else {
+      alert('Pagamento ainda pendente. Assim que o banco confirmar o Pix, seu Passe de 7 Dias será liberado automaticamente.')
+    }
   }
 
   async function handleSwitchMasterRole(nextRole, currentProf = profile) {
@@ -1182,7 +1217,7 @@ export default function App() {
   async function handleApply(shiftId) {
     if (!session) return
     if (!hasActivePass) {
-      handleOpenPassCheckout()
+      handleOpenPassModal()
       return
     }
     const targetShift = shifts.find((s) => s.id === shiftId) || selectedShiftModal
@@ -1330,7 +1365,8 @@ export default function App() {
         </div>
         <button
           type="button"
-          onClick={handleOpenPassCheckout}
+          disabled={buyingPass}
+          onClick={handleOpenPassModal}
           className="bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs px-4 py-3 rounded-xl transition shrink-0 shadow-[0_0_20px_rgba(163,230,53,0.25)]"
         >
           Ativar Passe 7 Dias — R$ 9,47
@@ -1339,225 +1375,140 @@ export default function App() {
     )
   }
 
-  // Modal Escuro de Checkout Integrado (Pix + Cartão)
-  const renderDarkCheckoutModal = () => {
-    if (!showCheckoutModal) return null
+  // Modal escuro integrado do TurnLevel com Payment Brick (Pix + Cartão de Crédito)
+  const renderPassCheckoutModal = () => {
+    if (!showPassModal) return null
 
     return (
       <div
         className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4"
-        onClick={() => setShowCheckoutModal(false)}
+        onClick={handleClosePassModal}
       >
         <div
-          className="bg-[#111111] border border-lime-400/50 text-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto shadow-[0_0_50px_rgba(163,230,53,0.12)]"
+          className="bg-[#111111] border border-lime-400/50 text-white rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto shadow-[0_0_40px_rgba(163,230,53,0.12)]"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex justify-between items-start border-b border-neutral-800 pb-3">
+          <div className="flex justify-between items-start gap-3 border-b border-neutral-800 pb-3.5">
             <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2.5 py-0.5 rounded-full">
-                Checkout TurnLevel • R$ 9,47
-              </span>
-              <h3 className="font-extrabold text-white text-base mt-1.5">
-                Passe de 7 Dias de Candidaturas
-              </h3>
-              <p className="text-[11px] text-neutral-400">
-                Pague com Pix ou Cartão sem sair do aplicativo.
+              <TurnLevelLogo size="md" />
+              <div className="flex items-center gap-2 mt-2.5">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400 text-black px-2.5 py-0.5 rounded-full">
+                  Passe de 7 Dias
+                </span>
+                <span className="text-sm font-black text-lime-400">
+                  R$ {formatCurrencyBRL(PASS_AMOUNT)}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                Pague com Cartão ou Pix sem sair do TurnLevel.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setShowCheckoutModal(false)}
-              className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold flex items-center justify-center shrink-0"
+              onClick={handleClosePassModal}
+              aria-label="Fechar checkout"
+              className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-white font-bold flex items-center justify-center shrink-0"
             >
               ✕
             </button>
           </div>
 
-          {/* Seletor Pix vs Cartão */}
-          <div className="grid grid-cols-2 bg-[#050505] p-1 rounded-2xl border border-neutral-800">
-            <button
-              type="button"
-              onClick={() => {
-                setCheckoutMethod('pix')
-                setCheckoutError('')
-              }}
-              className={`py-2.5 rounded-xl text-xs font-extrabold transition ${
-                checkoutMethod === 'pix'
-                  ? 'bg-lime-400 text-black shadow-sm'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Pix Instantâneo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setCheckoutMethod('card')
-                setCheckoutError('')
-              }}
-              className={`py-2.5 rounded-xl text-xs font-extrabold transition ${
-                checkoutMethod === 'card'
-                  ? 'bg-lime-400 text-black shadow-sm'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Cartão de Crédito
-            </button>
-          </div>
-
-          {checkoutError && (
-            <div className="bg-red-500/15 border border-red-500/40 text-red-300 text-xs p-3 rounded-2xl">
-              {checkoutError}
+          {paymentFeedback?.type === 'approved' ? (
+            <div className="bg-[#050505] border border-lime-400/50 rounded-2xl p-5 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-lime-400 text-black font-black text-lg flex items-center justify-center mx-auto">
+                ✓
+              </div>
+              <h3 className="text-base font-extrabold text-white">Pagamento Aprovado!</h3>
+              <p className="text-xs text-neutral-300 leading-relaxed">
+                Seu <strong className="text-lime-400">Passe de 7 Dias</strong> já está ativo. Você já pode se candidatar a turnos e vagas no TurnLevel.
+              </p>
+              <button
+                type="button"
+                onClick={handleClosePassModal}
+                className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition"
+              >
+                Continuar no TurnLevel →
+              </button>
             </div>
-          )}
+          ) : paymentFeedback?.type === 'pix' ? (
+            <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-4 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider bg-lime-400/15 text-lime-400 border border-lime-400/30 px-2.5 py-0.5 rounded-full">
+                  Pix Gerado
+                </span>
+                <span className="text-xs font-black text-white">R$ {formatCurrencyBRL(PASS_AMOUNT)}</span>
+              </div>
 
-          {checkoutMethod === 'pix' ? (
-            <div className="space-y-3.5">
-              {!pixData ? (
-                <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-4 space-y-3 text-center">
-                  <p className="text-xs text-neutral-300">
-                    Gere seu código Pix de <strong className="text-lime-400">R$ 9,47</strong> para liberar 7 dias de candidaturas ilimitadas.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={buyingPass}
-                    onClick={handleGeneratePixPass}
-                    className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.25)]"
-                  >
-                    {buyingPass ? 'Gerando Pix...' : 'Gerar Código Pix — R$ 9,47'}
-                  </button>
+              <p className="text-xs text-neutral-300 leading-relaxed">
+                Escaneie o QR Code ou copie o código Pix abaixo para pagar no aplicativo do seu banco.
+              </p>
+
+              {paymentFeedback.qrCodeBase64 && (
+                <div className="flex justify-center bg-white p-3 rounded-2xl w-fit mx-auto">
+                  <img
+                    src={`data:image/png;base64,${paymentFeedback.qrCodeBase64}`}
+                    alt="QR Code Pix"
+                    className="w-40 h-40 object-contain"
+                  />
                 </div>
-              ) : (
-                <div className="bg-[#050505] border border-lime-400/35 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-lime-400">Código Pix Gerado</span>
-                    <span className="text-xs font-bold text-white">R$ 9,47</span>
+              )}
+
+              {paymentFeedback.qrCode && (
+                <div className="space-y-2">
+                  <label className="block text-[11px] text-neutral-400 font-semibold">
+                    Código Pix (Copia e Cola)
+                  </label>
+                  <div className="bg-[#111111] border border-neutral-800 rounded-xl p-2.5 text-[11px] text-neutral-200 break-all font-mono">
+                    {paymentFeedback.qrCode}
                   </div>
-
-                  {pixData.qr_code_base64 && (
-                    <div className="flex justify-center py-1">
-                      <img
-                        src={`data:image/png;base64,${pixData.qr_code_base64}`}
-                        alt="QR Code Pix"
-                        className="w-40 h-40 rounded-2xl bg-white p-2"
-                      />
-                    </div>
-                  )}
-
-                  {pixData.qr_code && (
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] text-neutral-400">Pix Copia e Cola</label>
-                      <div className="bg-[#111111] border border-neutral-800 rounded-xl p-2.5 text-[11px] text-neutral-200 break-all font-mono">
-                        {pixData.qr_code}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(pixData.qr_code)
-                            setPixCopied(true)
-                          } catch {
-                            setPixCopied(false)
-                          }
-                        }}
-                        className="w-full bg-neutral-900 hover:bg-neutral-800 border border-lime-400/40 text-lime-400 font-extrabold text-xs py-2.5 rounded-xl transition"
-                      >
-                        {pixCopied ? '✓ Código Pix Copiado!' : 'Copiar Código Pix'}
-                      </button>
-                    </div>
-                  )}
-
                   <button
                     type="button"
-                    disabled={checkingPassStatus}
-                    onClick={handleCheckPassActivation}
-                    className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3 rounded-xl transition"
+                    onClick={() => handleCopyPixCode(paymentFeedback.qrCode)}
+                    className="w-full bg-neutral-900 hover:bg-neutral-800 border border-lime-400/40 text-lime-400 font-extrabold text-xs py-3 rounded-xl transition"
                   >
-                    {checkingPassStatus ? 'Verificando...' : 'Já paguei • Atualizar Status do Passe'}
+                    {copiedPix ? '✓ Código Pix Copiado!' : 'Copiar Código Pix'}
                   </button>
                 </div>
               )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPaymentFeedback(null)}
+                  className="w-1/3 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 font-bold text-xs py-3 rounded-xl transition"
+                >
+                  Trocar método
+                </button>
+                <button
+                  type="button"
+                  disabled={buyingPass}
+                  onClick={handleCheckPassStatusAfterPix}
+                  className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3 rounded-xl transition"
+                >
+                  {buyingPass ? 'Verificando...' : 'Já paguei, verificar passe'}
+                </button>
+              </div>
             </div>
           ) : (
-            <form onSubmit={handlePayWithCard} className="space-y-3">
-              <div>
-                <label className="block text-xs text-neutral-400 mb-1">Nome no Cartão</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Como está impresso no cartão"
-                  value={cardHolderName}
-                  onChange={(e) => setCardHolderName(e.target.value)}
-                  className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-neutral-400 mb-1">CPF do Titular</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="000.000.000-00"
-                  value={cardCpf}
-                  onChange={(e) => setCardCpf(e.target.value)}
-                  className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-neutral-400 mb-1">Número do Cartão</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  required
-                  placeholder="0000 0000 0000 0000"
-                  value={cardNumber}
-                  onChange={(e) => setCardNumber(e.target.value)}
-                  className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs text-neutral-400 mb-1">Validade (MM/AA)</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    required
-                    placeholder="12/28"
-                    maxLength={5}
-                    value={cardExpiry}
-                    onChange={(e) => {
-                      const digits = e.target.value.replace(/\D/g, '').slice(0, 4)
-                      const formatted = digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits
-                      setCardExpiry(formatted)
-                    }}
-                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
-                  />
+            <div className="space-y-3">
+              {brickLoading && (
+                <div className="bg-[#050505] border border-neutral-800 rounded-2xl p-6 text-center space-y-2">
+                  <p className="text-xs font-bold text-lime-400">Carregando opções de pagamento...</p>
+                  <p className="text-[11px] text-neutral-400">Preparando checkout seguro do TurnLevel.</p>
                 </div>
-                <div>
-                  <label className="block text-xs text-neutral-400 mb-1">Código CVV</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    required
-                    placeholder="123"
-                    maxLength={4}
-                    value={cardCvv}
-                    onChange={(e) => setCardCvv(e.target.value)}
-                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
-                  />
-                </div>
-              </div>
+              )}
 
-              <button
-                type="submit"
-                disabled={buyingPass}
-                className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.25)] mt-1"
-              >
-                {buyingPass ? 'Processando Cartão...' : 'Pagar R$ 9,47 com Cartão'}
-              </button>
-            </form>
+              <div
+                id="turnlevel-mp-brick-container"
+                className={brickLoading ? 'opacity-30 pointer-events-none' : 'opacity-100 transition-opacity'}
+              />
+
+              {brickError && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs p-3 rounded-xl">
+                  {brickError}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -2400,4 +2351,1195 @@ export default function App() {
                               <select
                                 value={salaryPeriod}
                                 onChange={(e) => setSalaryPeriod(e.target.value)}
-                                className="
+                                className="w-28 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-xs font-bold text-white"
+                              >
+                                <option value="/ mês">/ mês</option>
+                                <option value="/ quinzena">/ quinzena</option>
+                                <option value="/ semana">/ semana</option>
+                                <option value="/ dia">/ dia</option>
+                              </select>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Carga Horária</label>
+                            <select value={workload} onChange={(e) => setWorkload(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                              <option value="4 horas">4 horas</option>
+                              <option value="6 horas">6 horas</option>
+                              <option value="8 horas">8 horas</option>
+                              <option value="10 horas">10 horas</option>
+                              <option value="12 horas (Plantão)">12 horas (Plantão)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Horário do Turno</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              required
+                              placeholder="18:00 às 00:00"
+                              value={shiftHours}
+                              onChange={(e) => setShiftHours(formatShiftHoursMask(e.target.value))}
+                              className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Valor do Turno (R$)</label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              required
+                              placeholder="120 ou 120,00"
+                              value={payRate}
+                              onChange={(e) => setPayRate(e.target.value)}
+                              className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Data do Turno</label>
+                            <input type="datetime-local" required value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                        </>
+                      )}
+
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Transporte</label>
+                        <select value={transportInfo} onChange={(e) => setTransportInfo(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                          <option value="Vale-transporte pago">Vale-transporte pago</option>
+                          <option value="Ajuda de custo transporte">Ajuda de custo transporte</option>
+                          <option value="Não fornece transporte">Não fornece transporte</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Alimentação</label>
+                        <select value={mealInfo} onChange={(e) => setMealInfo(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                          <option value="Alimentação no local">Alimentação no local</option>
+                          <option value="Vale-refeição pago">Vale-refeição pago</option>
+                          <option value="Não fornece alimentação">Não fornece alimentação</option>
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-neutral-400 mb-1">Exigência de Veículo (Moto ou Carro)</label>
+                        <select value={vehicleRequired} onChange={(e) => setVehicleRequired(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white">
+                          <option value="Não exige veículo">Não exige veículo</option>
+                          <option value="Moto própria obrigatória">Moto própria obrigatória</option>
+                          <option value="Carro próprio obrigatório">Carro próprio obrigatório</option>
+                          <option value="Moto ou Carro próprio">Moto ou Carro próprio</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Bairro / Setor</label>
+                        <input type="text" required placeholder="Setor Bueno" value={shiftNeighborhood} onChange={(e) => setShiftNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Rua e Número</label>
+                        <input type="text" required placeholder="Rua T-30, nº 120" value={shiftStreet} onChange={(e) => setShiftStreet(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-neutral-400 mb-1">
+                          {publishType === 'job' ? 'Requisitos, Experiência e Benefícios da Vaga' : 'Exigências / Observações'}
+                        </label>
+                        <input
+                          type="text"
+                          required={publishType === 'job'}
+                          placeholder={publishType === 'job' ? 'Ex: Experiência na função, ensino médio, disponibilidade...' : 'Calça preta, CNH em dia...'}
+                          value={requirements}
+                          onChange={(e) => setRequirements(e.target.value)}
+                          className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                        />
+                      </div>
+
+                      <button type="submit" className="sm:col-span-2 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
+                        {publishType === 'job' ? '+ Publicar Vaga de Trabalho' : '+ Publicar Turno Agora'}
+                      </button>
+                    </form>
+                  </section>
+                )}
+
+                <section className="bg-[#111111] border border-neutral-800 rounded-2xl p-3.5 space-y-2.5">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <div className="flex-1 min-w-[160px] flex items-center gap-2 bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5">
+                      <span className="w-2 h-2 rounded-full bg-lime-400 shrink-0" />
+                      <input
+                        type="text"
+                        value={cityFilter}
+                        onChange={(e) => setCityFilter(e.target.value)}
+                        placeholder={isJobsTab ? 'Filtrar vagas por cidade ou bairro...' : 'Filtrar turnos por cidade ou bairro...'}
+                        className="w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-500"
+                      />
+                    </div>
+                    {!isJobsTab && (
+                      <select
+                        value={dayFilter}
+                        onChange={(e) => {
+                          setDayFilter(e.target.value)
+                          fetchShifts(cityFilter, e.target.value)
+                        }}
+                        className="bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-xs font-bold text-white outline-none focus:border-lime-400"
+                      >
+                        {WEEK_DAYS.map((d) => (
+                          <option key={d.value} value={d.value}>{d.label}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => fetchShifts(cityFilter, dayFilter)} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-2.5 rounded-xl transition">
+                      {isJobsTab ? 'Buscar Vagas' : 'Buscar Turnos'}
+                    </button>
+                    <button onClick={() => { setCityFilter(''); setDayFilter(''); fetchShifts('', '') }} className="bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-medium px-4 py-2.5 rounded-xl border border-neutral-800 transition">
+                      Limpar
+                    </button>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-white">
+                      {isJobsTab ? 'Vagas de Trabalho Disponíveis' : 'Turnos Disponíveis'}
+                    </h2>
+                    <span className="text-xs font-bold bg-neutral-900 text-lime-400 border border-neutral-800 px-2.5 py-1 rounded-full">
+                      {filteredListings.length} {filteredListings.length === 1 ? 'opção' : 'opções'}
+                    </span>
+                  </div>
+
+                  {loadingShifts ? (
+                    <p className="text-sm text-neutral-400">
+                      {isJobsTab ? 'A procurar vagas...' : 'A procurar turnos...'}
+                    </p>
+                  ) : filteredListings.length === 0 ? (
+                    <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
+                      <p className="text-sm text-neutral-400">
+                        {isJobsTab
+                          ? 'Nenhuma vaga de contratação encontrada com esses filtros.'
+                          : 'Nenhum turno encontrado com esses filtros.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {filteredListings.map((shift) => {
+                        const applied = applications.some((a) => a.shift_id === shift.id)
+                        const compRep = getReputationStats(shift.company?.id)
+                        const hasVehicleReq = shift.vehicle_required && shift.vehicle_required !== 'Não exige veículo'
+                        const itemIsJob = (shift.post_type || 'shift') === 'job'
+
+                        return (
+                          <div
+                            key={shift.id}
+                            onClick={() => setSelectedShiftModal(shift)}
+                            className="bg-white text-black hover:scale-[1.01] cursor-pointer rounded-3xl p-5 flex flex-col justify-between space-y-4 shadow-xl transition-all"
+                          >
+                            <div>
+                              <div className="flex items-center justify-between gap-2 mb-3">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                                  {itemIsJob
+                                    ? `${shift.employment_type || 'Contratação'} • ${shift.work_schedule || shift.workload || 'Escala a combinar'}`
+                                    : `${new Date(shift.shift_date).toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase()} • ${shift.workload || '6 horas'}`}
+                                </span>
+                                {hasVehicleReq && (
+                                  <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
+                                    {shift.vehicle_required}
+                                  </span>
+                                )}
+                              </div>
+
+                              <h3 className="font-extrabold text-black text-xl leading-tight">{shift.title}</h3>
+
+                              <div className="mt-1.5 flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-[#4d7c0f] tracking-tight">
+                                  R$ {formatCurrencyBRL(shift.pay_rate)}
+                                </span>
+                                <span className="text-xs font-semibold text-neutral-500">
+                                  {itemIsJob ? (shift.salary_period || '/ mês') : '/ turno'}
+                                </span>
+                              </div>
+
+                              <div className="mt-4 pt-3 border-t border-neutral-200 space-y-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    {shift.company?.avatar_url ? (
+                                      <img src={shift.company.avatar_url} alt="Logo" className="w-6 h-6 rounded-full object-cover border border-neutral-300" />
+                                    ) : (
+                                      <div className="w-6 h-6 rounded-full bg-black text-lime-400 flex items-center justify-center text-[10px] font-bold">
+                                        {(shift.company?.full_name || 'E')[0]}
+                                      </div>
+                                    )}
+                                    <p className="text-xs font-bold text-neutral-800">{shift.company?.full_name || 'Empresa'}</p>
+                                  </div>
+                                  <span className="text-[11px] font-extrabold text-amber-600">
+                                    {compRep.avg ? `★ ${compRep.avg} (${compRep.count})` : 'Nova empresa'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-neutral-600 font-medium">Local: {shift.location}</p>
+                                {itemIsJob ? (
+                                  <p className="text-xs text-neutral-500">
+                                    Horário: {shift.shift_hours || 'A combinar'} • {shift.vacancies || 1} {Number(shift.vacancies || 1) === 1 ? 'vaga' : 'vagas'}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-neutral-500">
+                                    Data: {new Date(shift.shift_date).toLocaleDateString('pt-BR')} {shift.shift_hours ? `• ${shift.shift_hours}` : ''} • {shift.vacancies || 1} {Number(shift.vacancies || 1) === 1 ? 'vaga' : 'vagas'}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="pt-1 space-y-2" onClick={(e) => e.stopPropagation()}>
+                              {activeRole === 'worker' ? (
+                                applied ? (
+                                  <div className="w-full text-center text-xs font-extrabold bg-black text-lime-400 py-3 rounded-2xl">
+                                    Candidatura Enviada ✓
+                                  </div>
+                                ) : hasActivePass ? (
+                                  <button
+                                    onClick={() => setSelectedShiftModal(shift)}
+                                    className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-sm"
+                                  >
+                                    {itemIsJob ? 'Ver Vaga e Candidatar' : 'Ver Detalhes e Candidatar'}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={handleOpenPassModal}
+                                    className="w-full bg-black hover:bg-neutral-800 text-lime-400 font-extrabold text-xs py-3.5 rounded-2xl transition shadow-sm"
+                                  >
+                                    Ativar Passe 7 Dias — R$ 9,47
+                                  </button>
+                                )
+                              ) : shift.company_id === session.user.id ? (
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditShift(shift)}
+                                    className="flex-1 bg-black hover:bg-neutral-800 text-lime-400 text-xs font-extrabold py-2.5 rounded-2xl transition"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteShift(shift.id)}
+                                    className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-extrabold py-2.5 rounded-2xl transition"
+                                  >
+                                    Excluir
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="w-full text-center text-xs font-bold bg-black text-white py-2.5 rounded-2xl">
+                                  Status: Aberto
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+
+            {activeTab === 'applications' && (
+              <section className="space-y-4">
+                <h2 className="text-lg font-bold text-white">
+                  {activeRole === 'company' ? 'Candidatos & Turnos Ativos' : 'Minhas Candidaturas'}
+                </h2>
+                {applications.length === 0 ? (
+                  <div className="bg-[#111111] border border-dashed border-neutral-800 rounded-3xl p-8 text-center">
+                    <p className="text-sm text-neutral-400">Sem registos no momento.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {applications.map((app) => {
+                      const isAccepted = app.status === 'accepted'
+                      const isCompany = activeRole === 'company'
+                      const companyPhone = app.shift?.company?.phone_ddd && app.shift?.company?.phone ? `55${app.shift.company.phone_ddd}${app.shift.company.phone.replace(/\D/g, '')}` : ''
+                      const workerPhone = app.worker?.phone_ddd && app.worker?.phone ? `55${app.worker.phone_ddd}${app.worker.phone.replace(/\D/g, '')}` : ''
+                      const workerRep = app.worker ? getReputationStats(app.worker.id) : { avg: null, count: 0 }
+                      const alreadyReviewed = allReviews.some((r) => r.application_id === app.id && r.reviewer_id === session.user.id)
+                      const appIsJob = (app.shift?.post_type || 'shift') === 'job'
+
+                      return (
+                        <div
+                          key={app.id}
+                          onClick={() => {
+                            if (isCompany && app.worker) {
+                              setSelectedWorkerModal(app)
+                            }
+                          }}
+                          className={`bg-white text-black rounded-3xl p-5 space-y-3 shadow-lg ${isCompany ? 'cursor-pointer hover:scale-[1.01] transition' : ''}`}
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <span className="text-xs font-extrabold text-[#4d7c0f] uppercase tracking-wide">
+                                {appIsJob ? 'VAGA • ' : 'TURNO • '}
+                                {app.shift?.title} • R$ {formatCurrencyBRL(app.shift?.pay_rate || 0)}
+                              </span>
+                              {isCompany ? (
+                                <div className="flex items-center gap-3 mt-2.5">
+                                  {app.worker?.avatar_url ? (
+                                    <img src={app.worker.avatar_url} alt="Foto" className="w-12 h-12 rounded-full object-cover border-2 border-black" />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-full bg-black text-lime-400 flex items-center justify-center text-sm font-extrabold">
+                                      {(app.worker?.full_name || 'T')[0]}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <h3 className="font-extrabold text-black text-base">
+                                      {app.worker?.full_name} {app.worker?.age ? `(${app.worker.age} anos)` : ''}
+                                    </h3>
+                                    <p className="text-xs font-extrabold text-amber-600">
+                                      {workerRep.avg ? `★ ${workerRep.avg} (${workerRep.count} avaliações)` : 'Novo no TurnLevel'}
+                                    </p>
+                                    <p className="text-xs text-neutral-600 font-medium">{app.worker?.neighborhood}, {app.worker?.city}</p>
+                                    <p className="text-[11px] text-neutral-500 underline mt-0.5">Toque para ver histórico e ficha</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mt-1.5">
+                                  <h3 className="font-extrabold text-black text-base">{app.shift?.company?.full_name}</h3>
+                                  <p className="text-xs text-neutral-600 font-medium">{app.shift?.location}</p>
+                                </div>
+                              )}
+                            </div>
+
+                            <span className={`text-xs px-3 py-1 rounded-full font-extrabold shrink-0 ${isAccepted ? 'bg-black text-lime-400' : app.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-neutral-200 text-neutral-800'}`}>
+                              {isAccepted ? 'Aceito ✓' : app.status === 'rejected' ? 'Recusado' : 'Pendente'}
+                            </span>
+                          </div>
+
+                          {isAccepted && (
+                            <div className="pt-2 space-y-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
+                              {isCompany && workerPhone ? (
+                                <a
+                                  href={`https://wa.me/${workerPhone}?text=Olá%20${encodeURIComponent(app.worker?.full_name || '')},%20sua%20candidatura%20para%20${encodeURIComponent(app.shift?.title || '')}%20foi%20aceita%20no%20TurnLevel.%20Vamos%20alinhar%20os%20detalhes?`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
+                                >
+                                  Chamar Trabalhador no WhatsApp
+                                </a>
+                              ) : !isCompany && companyPhone ? (
+                                <a
+                                  href={`https://wa.me/${companyPhone}?text=Olá,%20fui%20aceito(a)%20para%20${encodeURIComponent(app.shift?.title || '')}%20pela%20empresa%20${encodeURIComponent(app.shift?.company?.full_name || '')}%20no%20TurnLevel.`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-center gap-2 w-full bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl transition shadow-sm"
+                                >
+                                  Falar com a Empresa no WhatsApp
+                                </a>
+                              ) : null}
+
+                              {alreadyReviewed ? (
+                                <div className="w-full text-center text-xs font-bold bg-neutral-100 text-neutral-700 py-2.5 rounded-2xl">
+                                  ✓ Confirmado e avaliação enviada
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <button
+                                    onClick={() => handleConfirmShiftEndAndOpenReview(app)}
+                                    className="w-full bg-black hover:bg-neutral-800 text-lime-400 text-xs font-extrabold py-3 rounded-2xl transition"
+                                  >
+                                    ★ Confirmar e Avaliar
+                                  </button>
+                                  {(isCompany ? workerPhone : companyPhone) && (
+                                    <a
+                                      href={`https://wa.me/${isCompany ? workerPhone : companyPhone}?text=${encodeURIComponent(
+                                        isCompany
+                                          ? `Olá ${app.worker?.full_name || ''}! Confirmamos sua participação em ${app.shift?.title || ''} pelo TurnLevel. Acesse o app para deixar sua avaliação.`
+                                          : `Olá ${app.shift?.company?.full_name || ''}! Já confirmei no app TurnLevel referente a ${app.shift?.title || ''}.`
+                                      )}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center justify-center gap-1.5 w-full bg-neutral-200 hover:bg-neutral-300 text-black text-xs font-bold py-3 rounded-2xl transition"
+                                    >
+                                      Notificar no WhatsApp
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {isCompany && app.status === 'pending' && (
+                            <div className="flex gap-2 pt-2 border-t border-neutral-200" onClick={(e) => e.stopPropagation()}>
+                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'accepted')} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black text-xs font-extrabold py-3 rounded-2xl">
+                                Aceitar ✓
+                              </button>
+                              <button onClick={() => handleApplicationStatus(app.id, app.shift.id, 'rejected')} className="flex-1 bg-neutral-200 hover:bg-red-100 hover:text-red-700 text-neutral-700 text-xs font-bold py-3 rounded-2xl">
+                                Recusar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === 'profile' && (
+              <div className="space-y-6">
+                {renderPassCard()}
+
+                <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-bold text-white">Atalho na Tela Inicial</h2>
+                    <p className="text-xs text-neutral-400">Veja como fixar o TurnLevel na tela do celular.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowInstallGuide(true)}
+                    className="bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs px-3.5 py-2.5 rounded-xl transition shrink-0"
+                  >
+                    Ver Guia
+                  </button>
+                </section>
+
+                {!pushEnabled && (
+                  <section className="bg-[#111111] border border-lime-400/30 rounded-3xl p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h2 className="text-base font-bold text-white">
+                          {activeRole === 'company'
+                            ? 'Alertas de Candidatos'
+                            : 'Alertas de Vagas e Turnos (Raio de 20 km)'}
+                        </h2>
+                        <p className="text-xs text-neutral-400">
+                          {activeRole === 'company'
+                            ? 'Receba notificações gratuitas no celular quando um trabalhador se candidatar.'
+                            : 'Receba notificações gratuitas no aparelho quando novas oportunidades surgirem perto de você.'}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-extrabold bg-lime-400/15 text-lime-400 border border-lime-400/30 px-2.5 py-1 rounded-full shrink-0">
+                        Grátis
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleActivatePushNotifications}
+                      disabled={pushLoading}
+                      className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]"
+                    >
+                      {pushLoading ? 'Ativando notificações...' : '🔔 Ativar Notificações'}
+                    </button>
+                  </section>
+                )}
+
+                <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-white">Meu Histórico & Avaliações</h2>
+                    <span className="text-xs font-extrabold bg-lime-400 text-black px-3 py-1 rounded-full">
+                      {myReputation.avg ? `★ ${myReputation.avg}` : 'Sem notas'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-[#050505] border border-neutral-800 p-3.5 rounded-2xl">
+                      <span className="text-[11px] text-neutral-400 block">Concluídos</span>
+                      <span className="text-xl font-black text-white">{Math.max(myCompletedCount, myReputation.count)}</span>
+                    </div>
+                    <div className="bg-[#050505] border border-neutral-800 p-3.5 rounded-2xl">
+                      <span className="text-[11px] text-neutral-400 block">Avaliações Recebidas</span>
+                      <span className="text-xl font-black text-lime-400">{myReputation.count}</span>
+                    </div>
+                  </div>
+
+                  {myReputation.reviews.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-xs text-neutral-400 font-semibold">Últimos comentários recebidos:</p>
+                      {myReputation.reviews.slice(0, 3).map((rev) => (
+                        <div key={rev.id} className="bg-[#050505] border border-neutral-800/80 p-3 rounded-2xl text-xs space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-white">{rev.reviewer?.full_name || 'Usuário'}</span>
+                            <span className="text-lime-400 font-extrabold">{'★'.repeat(rev.rating)}</span>
+                          </div>
+                          {rev.comment && <p className="text-neutral-400">"{rev.comment}"</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="bg-[#111111] border border-neutral-800 rounded-3xl p-5 space-y-5">
+                  <h2 className="text-lg font-bold text-white">Meus Dados Cadastrais</h2>
+                  <form onSubmit={handleUpdateProfile} className="space-y-4">
+                    <div className="flex items-center gap-4 bg-[#050505] p-4 rounded-2xl border border-neutral-800">
+                      <div className="relative group cursor-pointer">
+                        {avatarPreview ? (
+                          <img src={avatarPreview} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-lime-400 shadow-md" />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center text-xs text-neutral-400 border border-neutral-700 font-bold">Foto</div>
+                        )}
+                        <label className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-[10px] text-lime-400 font-extrabold text-center px-1">
+                          Alterar
+                          <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                        </label>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-bold text-white mb-0.5">Foto de Perfil / Logotipo</p>
+                        <label className="inline-block text-xs font-extrabold text-lime-400 cursor-pointer hover:underline">
+                          Toque aqui para alterar imagem...
+                          <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f){ setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } }} className="hidden" />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Nome</label>
+                        <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Telefone</label>
+                        <div className="flex gap-2">
+                          <select value={phoneDdd} onChange={(e) => setPhoneDdd(e.target.value)} className="w-24 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
+                            {BRAZIL_DDDS.map((d) => <option key={d} value={d}>DDD {d}</option>)}
+                          </select>
+                          <input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                        </div>
+                      </div>
+                      {activeRole === 'company' ? (
+                        <>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">CNPJ Válido</label>
+                            <input type="text" inputMode="numeric" value={cnpj} onChange={(e) => setCnpj(formatCnpjMask(e.target.value))} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Setor</label>
+                            <input type="text" value={sector} onChange={(e) => setSector(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs text-neutral-400 mb-1">Sobre a empresa</label>
+                            <textarea rows={2} value={bio} onChange={(e) => setBio(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">CPF</label>
+                            <input type="text" inputMode="numeric" value={cpf} onChange={(e) => setCpf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-neutral-400 mb-1">Idade</label>
+                            <select value={age} onChange={(e) => setAge(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-sm text-white">
+                              {AGE_OPTIONS.map((num) => <option key={num} value={num}>{num} anos</option>)}
+                            </select>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs text-neutral-400 mb-1">Distância máxima</label>
+                            <select value={maxDistance} onChange={(e) => setMaxDistance(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white">
+                              <option value="Até 5 km (Mesmo bairro)">Até 5 km (Mesmo bairro)</option>
+                              <option value="Até 10 km">Até 10 km</option>
+                              <option value="Até 20 km">Até 20 km</option>
+                              <option value="Toda a cidade">Toda a cidade</option>
+                            </select>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs text-neutral-400 mb-1.5">Habilidades</label>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {SKILL_OPTIONS.map((skill) => {
+                                const active = selectedSkills.includes(skill)
+                                return (
+                                  <button type="button" key={skill} onClick={() => toggleSkill(skill)} className={`text-[11px] px-2.5 py-1 rounded-full border transition ${active ? 'bg-lime-400 border-lime-400 text-black font-bold' : 'bg-[#050505] border-neutral-800 text-neutral-400'}`}>
+                                    {active ? '✓ ' : '+ '}{skill}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            <input type="text" placeholder="Outras..." value={customSkill} onChange={(e) => setCustomSkill(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2 text-xs text-white" />
+                          </div>
+                        </>
+                      )}
+
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">CEP</label>
+                        <input type="text" inputMode="numeric" value={cep} onChange={(e) => handleCepLookup(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Estado (UF)</label>
+                        <input type="text" value={stateUf} onChange={(e) => setStateUf(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Cidade</label>
+                        <input type="text" value={city} onChange={(e) => setCity(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-neutral-400 mb-1">Bairro</label>
+                        <input type="text" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-neutral-400 mb-1">Endereço</label>
+                        <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white" />
+                      </div>
+                    </div>
+
+                    <button type="submit" disabled={authLoading} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-xl transition shadow-[0_0_20px_rgba(163,230,53,0.2)]">
+                      {authLoading ? 'A guardar...' : 'Salvar Alterações'}
+                    </button>
+                  </form>
+                </section>
+
+                {renderLegalFooter()}
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {selectedShiftModal && (() => {
+        const compRep = getReputationStats(selectedShiftModal.company?.id)
+        const modalIsJob = (selectedShiftModal.post_type || 'shift') === 'job'
+        return (
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedShiftModal(null)}>
+            <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  {selectedShiftModal.company?.avatar_url ? (
+                    <img src={selectedShiftModal.company.avatar_url} alt="Empresa" className="w-12 h-12 rounded-full object-cover border-2 border-black" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold">
+                      {(selectedShiftModal.company?.full_name || 'E')[0]}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-extrabold text-black text-base">{selectedShiftModal.company?.full_name || 'Empresa'}</h3>
+                    <p className="text-xs font-extrabold text-amber-600">
+                      {compRep.avg ? `★ ${compRep.avg} • ${compRep.count} avaliações` : 'Empresa recém-cadastrada'}
+                    </p>
+                    <p className="text-xs text-neutral-500">CNPJ: {maskDocument(selectedShiftModal.company?.cnpj, 'cnpj')}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedShiftModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
+              </div>
+
+              {selectedShiftModal.company?.bio && (
+                <div className="bg-neutral-100 p-3.5 rounded-2xl">
+                  <p className="text-[11px] text-neutral-500 font-bold uppercase mb-1">Sobre a empresa</p>
+                  <p className="text-xs text-neutral-800">{selectedShiftModal.company.bio}</p>
+                </div>
+              )}
+
+              {compRep.reviews.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl space-y-1.5">
+                  <p className="text-[11px] font-extrabold text-amber-900 uppercase">Avaliações de Trabalhadores</p>
+                  {compRep.reviews.slice(0, 2).map((rev) => (
+                    <div key={rev.id} className="text-xs text-neutral-800">
+                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}:</span> "{rev.comment || 'Ótima empresa para trabalhar.'}"
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-3 border-t border-neutral-200 pt-3">
+                <div className="flex justify-between items-center gap-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-black text-lime-400 px-2 py-0.5 rounded-full">
+                      {modalIsJob ? 'Vaga de Trabalho' : 'Turno Pontual'}
+                    </span>
+                    <h4 className="font-extrabold text-black text-lg mt-1">{selectedShiftModal.title}</h4>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[#4d7c0f] font-black text-xl block">
+                      R$ {formatCurrencyBRL(selectedShiftModal.pay_rate)}
+                    </span>
+                    <span className="text-[11px] text-neutral-500 font-bold">
+                      {modalIsJob ? (selectedShiftModal.salary_period || '/ mês') : '/ turno'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Vagas</span>
+                    <span className="text-black font-bold">{selectedShiftModal.vacancies || 1}</span>
+                  </div>
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">{modalIsJob ? 'Contratação' : 'Carga Horária'}</span>
+                    <span className="text-black font-bold">
+                      {modalIsJob ? (selectedShiftModal.employment_type || 'A combinar') : (selectedShiftModal.workload || 'A combinar')}
+                    </span>
+                  </div>
+                  {modalIsJob && (
+                    <div className="col-span-2 bg-neutral-100 p-3 rounded-2xl">
+                      <span className="text-neutral-500 block">Escala</span>
+                      <span className="text-black font-bold">{selectedShiftModal.work_schedule || selectedShiftModal.workload || 'A combinar'}</span>
+                    </div>
+                  )}
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Transporte</span>
+                    <span className="text-black font-bold">{selectedShiftModal.transport_info || 'Não informado'}</span>
+                  </div>
+                  <div className="bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Alimentação</span>
+                    <span className="text-black font-bold">{selectedShiftModal.meal_info || 'Não informado'}</span>
+                  </div>
+                  <div className="col-span-2 bg-neutral-100 p-3 rounded-2xl">
+                    <span className="text-neutral-500 block">Veículo</span>
+                    <span className="text-black font-bold">{selectedShiftModal.vehicle_required || 'Não exige veículo'}</span>
+                  </div>
+                </div>
+
+                <div className="bg-neutral-100 p-3.5 rounded-2xl text-xs space-y-1.5">
+                  {modalIsJob ? (
+                    <p className="text-neutral-800"><strong>Horário:</strong> {selectedShiftModal.shift_hours || 'A combinar'}</p>
+                  ) : (
+                    <p className="text-neutral-800"><strong>Data:</strong> {new Date(selectedShiftModal.shift_date).toLocaleDateString('pt-BR')} {selectedShiftModal.shift_hours ? `(${selectedShiftModal.shift_hours})` : ''}</p>
+                  )}
+                  <p className="text-neutral-800"><strong>Local:</strong> {selectedShiftModal.shift_street ? `${selectedShiftModal.shift_street}, ` : ''}{selectedShiftModal.location}</p>
+                  {selectedShiftModal.requirements && (
+                    <p className="text-neutral-800 pt-1">
+                      <strong>{modalIsJob ? 'Requisitos da vaga:' : 'Exigências:'}</strong> {selectedShiftModal.requirements}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {activeRole === 'worker' && selectedShiftModal.status === 'open' && (
+                <div className="pt-2">
+                  {applications.some((a) => a.shift_id === selectedShiftModal.id) ? (
+                    <div className="w-full text-center py-3.5 rounded-2xl bg-black text-lime-400 text-xs font-extrabold">
+                      Você já se candidatou ✓
+                    </div>
+                  ) : hasActivePass ? (
+                    <button onClick={() => handleApply(selectedShiftModal.id)} className="w-full bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl transition shadow-md">
+                      {modalIsJob ? 'Candidatar-se à Vaga' : 'Confirmar Candidatura'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedShiftModal(null)
+                        handleOpenPassModal()
+                      }}
+                      className="w-full bg-black hover:bg-neutral-800 text-lime-400 font-extrabold text-xs py-3.5 rounded-2xl transition shadow-md"
+                    >
+                      Ativar Passe 7 Dias — R$ 9,47
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {selectedWorkerModal && selectedWorkerModal.worker && (() => {
+        const wRep = getReputationStats(selectedWorkerModal.worker.id)
+        return (
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedWorkerModal(null)}>
+            <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  {selectedWorkerModal.worker.avatar_url ? (
+                    <img src={selectedWorkerModal.worker.avatar_url} alt="Candidato" className="w-14 h-14 rounded-full object-cover border-2 border-black" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-black text-lime-400 flex items-center justify-center font-extrabold text-lg">
+                      {(selectedWorkerModal.worker.full_name || 'T')[0]}
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-extrabold text-black text-base">{selectedWorkerModal.worker.full_name}</h3>
+                    <p className="text-xs font-extrabold text-amber-600">
+                      {wRep.avg ? `★ ${wRep.avg} • ${wRep.count} avaliações` : 'Primeiro registro na plataforma'}
+                    </p>
+                    <p className="text-xs text-neutral-600 font-medium">
+                      {selectedWorkerModal.worker.age ? `${selectedWorkerModal.worker.age} anos` : ''} • {selectedWorkerModal.worker.city}/{selectedWorkerModal.worker.state}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedWorkerModal(null)} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-black font-bold flex items-center justify-center">✕</button>
+              </div>
+
+              <div className="space-y-2 text-xs bg-neutral-100 p-4 rounded-2xl">
+                <p className="text-neutral-800"><strong>CPF:</strong> {maskDocument(selectedWorkerModal.worker.cpf, 'cpf')}</p>
+                <p className="text-neutral-800"><strong>WhatsApp:</strong> ({selectedWorkerModal.worker.phone_ddd || '62'}) {selectedWorkerModal.worker.phone}</p>
+                <p className="text-neutral-800"><strong>Bairro:</strong> {selectedWorkerModal.worker.neighborhood} - {selectedWorkerModal.worker.address}</p>
+                <p className="text-neutral-800"><strong>Raio:</strong> {selectedWorkerModal.worker.max_distance || 'Não informado'}</p>
+                <p className="text-neutral-800"><strong>Habilidades:</strong> {selectedWorkerModal.worker.skills || 'Não especificadas'}</p>
+              </div>
+
+              {wRep.reviews.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl space-y-1.5">
+                  <p className="text-[11px] font-extrabold text-amber-900 uppercase">Histórico de Avaliações</p>
+                  {wRep.reviews.slice(0, 3).map((rev) => (
+                    <div key={rev.id} className="text-xs text-neutral-800">
+                      <span className="font-bold text-amber-700">{'★'.repeat(rev.rating)}</span> ({rev.reviewer?.full_name || 'Empresa'}): "{rev.comment || 'Excelente profissional.'}"
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {selectedWorkerModal.status === 'pending' && (
+                <div className="flex gap-2 pt-2">
+                  <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'accepted')} className="flex-1 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-sm py-3.5 rounded-2xl">
+                    Aceitar Candidato ✓
+                  </button>
+                  <button onClick={() => handleApplicationStatus(selectedWorkerModal.id, selectedWorkerModal.shift.id, 'rejected')} className="flex-1 bg-neutral-200 hover:bg-red-100 hover:text-red-700 text-neutral-700 text-xs font-bold py-3.5 rounded-2xl">
+                    Recusar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {editingShift && (() => {
+        const editIsJob = editingShift.post_type === 'job'
+        return (
+          <div
+            className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setEditingShift(null)}
+          >
+            <div
+              className="bg-[#111111] border border-neutral-800 text-white rounded-3xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center border-b border-neutral-800 pb-3">
+                <h3 className="font-extrabold text-white text-base">
+                  {editIsJob ? 'Editar Vaga de Trabalho' : 'Editar Turno'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingShift(null)}
+                  className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditShift} className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Função / Cargo</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingShift.title}
+                    onChange={(e) => setEditingShift({ ...editingShift, title: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Vagas</label>
+                  <select
+                    value={editingShift.vacancies}
+                    onChange={(e) => setEditingShift({ ...editingShift, vacancies: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map((v) => (
+                      <option key={v} value={v}>{v} vagas</option>
+                    ))}
+                  </select>
+                </div>
+
+                {editIsJob ? (
+                  <>
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Tipo de Contratação</label>
+                      <select
+                        value={editingShift.employment_type}
+                        onChange={(e) => setEditingShift({ ...editingShift, employment_type: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                      >
+                        <option value="CLT / Efetivo">CLT / Efetivo</option>
+                        <option value="Temporário">Temporário</option>
+                        <option value="Período de Experiência">Período de Experiência</option>
+                        <option value="PJ / Prestador">PJ / Prestador</option>
+                        <option value="A combinar">A combinar</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Escala de Trabalho</label>
+                      <select
+                        value={editingShift.work_schedule}
+                        onChange={(e) => setEditingShift({ ...editingShift, work_schedule: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                      >
+                        <option value="Segunda a Sexta">Segunda a Sexta</option>
+                        <option value="Segunda a Sábado">Segunda a Sábado</option>
+                        <option value="Escala 6x1">Escala 6x1</option>
+                        <option value="Escala 5x2">Escala 5x2</option>
+                        <option value="Escala 12x36">Escala 12x36</option>
+                        <option value="Finais de Semana">Finais de Semana</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Horário</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        required
+                        value={editingShift.shift_hours}
+                        onChange={(e) =>
+                          setEditingShift({
+                            ...editingShift,
+                            shift_hours: formatShiftHoursMask(e.target.value)
+                          })
+                        }
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Salário (R$)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          required
+                          placeholder="2000 ou 2000,00"
+                          value={editingShift.pay_rate}
+                          onChange={(e) => setEditingShift({ ...editingShift, pay_rate: e.target.value })}
+                          className="flex-1 bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                        />
+                        <select
+                          value={editingShift.salary_period}
+                          onChange={(e) => setEditingShift({ ...editingShift, salary_period: e.target.value })}
+                          className="w-28 bg-[#050505] border border-neutral-800 rounded-xl px-2 py-2.5 text-xs font-bold text-white"
+                        >
+                          <option value="/ mês">/ mês</option>
+                          <option value="/ quinzena">/ quinzena</option>
+                          <option value="/ semana">/ semana</option>
+                          <option value="/ dia">/ dia</option>
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Carga Horária</label>
+                      <select
+                        value={editingShift.workload}
+                        onChange={(e) => setEditingShift({ ...editingShift, workload: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                      >
+                        <option value="4 horas">4 horas</option>
+                        <option value="6 horas">6 horas</option>
+                        <option value="8 horas">8 horas</option>
+                        <option value="10 horas">10 horas</option>
+                        <option value="12 horas (Plantão)">12 horas (Plantão)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Horário</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        required
+                        value={editingShift.shift_hours}
+                        onChange={(e) =>
+                          setEditingShift({
+                            ...editingShift,
+                            shift_hours: formatShiftHoursMask(e.target.value)
+                          })
+                        }
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Valor (R$)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        required
+                        placeholder="120 ou 120,00"
+                        value={editingShift.pay_rate}
+                        onChange={(e) => setEditingShift({ ...editingShift, pay_rate: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-neutral-400 mb-1">Data</label>
+                      <input
+                        type="datetime-local"
+                        required
+                        value={editingShift.shift_date}
+                        onChange={(e) => setEditingShift({ ...editingShift, shift_date: e.target.value })}
+                        className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Status</label>
+                  <select
+                    value={editingShift.status}
+                    onChange={(e) => setEditingShift({ ...editingShift, status: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                  >
+                    <option value="open">Aberto</option>
+                    <option value="filled">Preenchido</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Exigência de Veículo</label>
+                  <select
+                    value={editingShift.vehicle_required}
+                    onChange={(e) => setEditingShift({ ...editingShift, vehicle_required: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white"
+                  >
+                    <option value="Não exige veículo">Não exige veículo</option>
+                    <option value="Moto própria obrigatória">Moto própria obrigatória</option>
+                    <option value="Carro próprio obrigatório">Carro próprio obrigatório</option>
+                    <option value="Moto ou Carro próprio">Moto ou Carro próprio</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Bairro / Setor</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingShift.shift_neighborhood}
+                    onChange={(e) => setEditingShift({ ...editingShift, shift_neighborhood: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-neutral-400 mb-1">Rua e Número</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingShift.shift_street}
+                    onChange={(e) => setEditingShift({ ...editingShift, shift_street: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-neutral-400 mb-1">Requisitos / Observações</label>
+                  <input
+                    type="text"
+                    value={editingShift.requirements}
+                    onChange={(e) => setEditingShift({ ...editingShift, requirements: e.target.value })}
+                    className="w-full bg-[#050505] border border-neutral-800 focus:border-lime-400 outline-none rounded-xl px-3 py-2.5 text-sm text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingShift(null)}
+                    className="w-1/3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-xs py-3 rounded-xl transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="w-2/3 bg-lime-400 hover:bg-lime-300 text-black font-extrabold text-xs py-3 rounded-xl transition"
+                  >
+                    {savingEdit ? 'Salvando...' : 'Salvar Alterações ✓'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      })()}
+
+      {reviewModalApp && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setReviewModalApp(null)}>
+          <div className="bg-white text-black rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center">
+              <h3 className="font-extrabold text-black text-lg">Avaliar Experiência</h3>
+              <button onClick={() => setReviewModalApp(null)} className="w-8 h-8 rounded-full bg-neutral-100 text-black font-bold flex items-center justify-center">✕</button>
+            </div>
+            <p className="text-xs text-neutral-600">
+              Referência: <strong>{reviewModalApp.shift?.title}</strong>. Sua avaliação aparece no histórico público e ajuda a manter a qualidade do TurnLevel.
+            </p>
+            <form onSubmit={handleSubmitReview} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-2">Nota (1 a 5 estrelas)</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      type="button"
+                      key={star}
+                      onClick={() => setReviewRating(star)}
+                      className={`flex-1 py-3 rounded-2xl font-extrabold text-base border transition ${reviewRating >= star ? 'bg-lime-400 border-black text-black' : 'bg-neutral-100 border-neutral-200 text-neutral-400'}`}
+                    >
+                      ★ {star}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">Comentário (opcional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="Pontualidade, pagamento em dia, ambiente de trabalho..."
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  className="w-full bg-neutral-100 border border-neutral-300 rounded-2xl p-3 text-xs text-black outline-none focus:border-black"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={submittingReview}
+                className="w-full bg-black hover:bg-neutral-800 text-lime-400 font-extrabold text-sm py-3.5 rounded-2xl transition"
+              >
+                {submittingReview ? 'Enviando...' : 'Enviar Avaliação ✓'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {renderPassCheckoutModal()}
+      {renderPushPromptModal()}
+      {renderInstallGuideModal()}
+      {renderLegalModal()}
+
+      <nav className="fixed bottom-0 inset-x-0 bg-[#050505]/95 backdrop-blur-md border-t border-neutral-900 px-3 py-2.5 z-20">
+        <div className="max-w-lg mx-auto grid grid-cols-4 gap-1.5">
+          <button
+            onClick={() => { setActiveTab('shifts'); setPublishType('shift') }}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'shifts' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
+            Turnos
+          </button>
+          <button
+            onClick={() => { setActiveTab('jobs'); setPublishType('job') }}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'jobs' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
+            Vagas
+          </button>
+          <button
+            onClick={() => { setActiveTab('applications'); fetchApplications(profile); fetchAllReviews() }}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'applications' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
+            {activeRole === 'company' ? 'Candidatos' : 'Candidaturas'}
+          </button>
+          <button
+            onClick={() => { setActiveTab('profile'); fetchAllReviews() }}
+            className={`py-2.5 rounded-2xl text-xs font-extrabold transition ${activeTab === 'profile' ? 'bg-lime-400 text-black shadow-[0_0_15px_rgba(163,230,53,0.25)]' : 'text-neutral-400 hover:text-white'}`}
+          >
+            Perfil
+          </button>
+        </div>
+      </nav>
+    </div>
+  )
+}
