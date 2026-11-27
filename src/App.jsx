@@ -347,7 +347,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Atualiza o perfil automaticamente ao retornar ao aplicativo
   useEffect(() => {
     if (!session?.user?.id) return
     const handleReturnFocus = () => {
@@ -377,11 +376,12 @@ export default function App() {
             }
           }
         })
-        .catch(() => {})
+        .catch((err) => {
+          console.error('Erro push subscription:', err)
+        })
     }
   }, [session])
 
-  // Inicializa o Payment Brick do Mercado Pago em tema escuro dentro do modal
   useEffect(() => {
     if (!showPassModal || paymentFeedback) return
 
@@ -402,7 +402,9 @@ export default function App() {
         if (brickControllerRef.current?.unmount) {
           try {
             await brickControllerRef.current.unmount()
-          } catch (_) {}
+          } catch (err) {
+            console.error('Erro ao desmontar brick anterior:', err)
+          }
           brickControllerRef.current = null
         }
 
@@ -494,9 +496,7 @@ export default function App() {
                 })
               } catch (err) {
                 setBuyingPass(false)
-                if (!brickError) {
-                  setBrickError(err?.message || 'Erro ao confirmar pagamento.')
-                }
+                setBrickError(err?.message || 'Erro ao confirmar pagamento.')
                 throw err
               }
             },
@@ -512,7 +512,7 @@ export default function App() {
         if (!cancelled) {
           brickControllerRef.current = controller
         } else if (controller?.unmount) {
-          controller.unmount().catch(() => {})
+          controller.unmount().catch((err) => console.error(err))
         }
       } catch (err) {
         if (!cancelled) {
@@ -527,7 +527,7 @@ export default function App() {
     return () => {
       cancelled = true
       if (brickControllerRef.current?.unmount) {
-        brickControllerRef.current.unmount().catch(() => {})
+        brickControllerRef.current.unmount().catch((err) => console.error(err))
         brickControllerRef.current = null
       }
     }
@@ -555,7 +555,8 @@ export default function App() {
       await navigator.clipboard.writeText(code)
       setCopiedPix(true)
       setTimeout(() => setCopiedPix(false), 2500)
-    } catch (_) {
+    } catch (err) {
+      console.error('Erro ao copiar código Pix:', err)
       alert('Código Pix: ' + code)
     }
   }
@@ -637,7 +638,7 @@ export default function App() {
         body: {
           test_subscription: { endpoint, p256dh, auth }
         }
-      }).catch(() => {})
+      }).catch((err) => console.error('Erro notificação teste:', err))
 
       setPushEnabled(true)
       setShowPushPromptModal(false)
@@ -1239,7 +1240,7 @@ export default function App() {
             title: isJob ? 'Novo candidato na sua vaga!' : 'Novo candidato no seu turno!',
             body: `${workerName} se candidatou para "${targetShift.title}". Abra a aba Candidatos para responder.`
           }
-        }).catch(() => {})
+        }).catch((err) => console.error('Erro notificação candidato:', err))
       }
 
       alert('Candidatura enviada com sucesso.')
@@ -1263,7 +1264,7 @@ export default function App() {
               title: 'Candidatura Aceita! ✓',
               body: `${compName} aceitou sua candidatura para "${targetShift?.title || 'a oportunidade'}". Entre no app para falar no WhatsApp!`
             }
-          }).catch(() => {})
+          }).catch((err) => console.error('Erro notificação aceita:', err))
         }
 
         const totalVacancies = Number(targetShift?.vacancies || 1)
@@ -1375,7 +1376,6 @@ export default function App() {
     )
   }
 
-  // Modal escuro integrado do TurnLevel com Payment Brick (Pix + Cartão de Crédito)
   const renderPassCheckoutModal = () => {
     if (!showPassModal) return null
 
